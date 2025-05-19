@@ -16,7 +16,7 @@ A smart Homebrew helper script that enhances the update and upgrade process by p
 
 1. Clone or download this repository:
    ```
-   git clone <repository-url>
+   git clone https://github.com/cicciocanestro/brew-update-tracker.git
    ```
    or download the script directly.
 
