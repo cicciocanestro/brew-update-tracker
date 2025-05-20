@@ -2,6 +2,9 @@
 
 A smart Homebrew helper script that enhances the update and upgrade process by providing detailed information about available package updates.
 
+![image](https://github.com/user-attachments/assets/cf807b0e-0930-4031-8d67-5ada1815fb42)
+
+
 ## 📋 Description
 
 `brew_upgrade_tracker.sh` is a ZSH script that wraps around Homebrew's update and upgrade functionality, providing additional insights and control. It tracks installed packages before and after running `brew update`, shows detailed information about available updates (including package homepages and descriptions), and allows you to decide whether to proceed with the upgrade process.
