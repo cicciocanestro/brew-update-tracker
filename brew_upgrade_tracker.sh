@@ -20,6 +20,28 @@ RESET="\033[0m"
 # Exit on error
 set -e
 
+# Helper function to safely parse JSON with jq
+# Usage: safe_jq_parse "json_string" ".path.to.field" ["default_value"]
+safe_jq_parse() {
+    local json="$1"
+    local query="$2"
+    local default="${3:-N/A}"
+    
+    # Remove control characters that can cause jq to fail
+    local sanitized_json=$(echo "$json" | tr -d '\000-\037')
+    
+    # Try to parse with jq, with error handling
+    local result
+    result=$(echo "$sanitized_json" | jq -r "$query" 2>/dev/null) || result="$default"
+    
+    # Check if result is null or empty
+    if [[ "$result" == "null" || -z "$result" ]]; then
+        echo "$default"
+    else
+        echo "$result"
+    fi
+}
+
 # Check if Homebrew is installed
 if ! command -v brew &> /dev/null; then
     echo -e "${RED}Error: Homebrew is not installed${RESET}" >&2
@@ -79,9 +101,10 @@ echo -e "\n${CYAN}📊 Processing updated formulae...${RESET}"
 if [[ -s "$TEMP_DIR/outdated_formulae.txt" ]]; then
     echo -e "\n${BRIGHT_GREEN}📦 Updated Formulae:${RESET}"
     while read -r formula; do
-        info=$(brew info --json=v2 "$formula")
-        homepage=$(echo "$info" | jq -r '.formulae[0].homepage')
-        desc=$(echo "$info" | jq -r '.formulae[0].desc')
+        # Get formula info with error handling
+        info=$(brew info --json=v2 "$formula" 2>/dev/null || echo '{"formulae":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
+        homepage=$(safe_jq_parse "$info" '.formulae[0].homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.formulae[0].desc' "Unable to retrieve description")
         echo "  - $formula:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
@@ -95,9 +118,10 @@ echo -e "\n${CYAN}📊 Processing updated casks...${RESET}"
 if [[ -s "$TEMP_DIR/outdated_casks.txt" ]]; then
     echo -e "\n${BRIGHT_GREEN}📦 Updated Casks:${RESET}"
     while read -r cask; do
-        info=$(brew info --json=v2 "$cask")
-        homepage=$(echo "$info" | jq -r '.casks[0].homepage')
-        desc=$(echo "$info" | jq -r '.casks[0].desc')
+        # Get cask info with error handling
+        info=$(brew info --json=v2 "$cask" 2>/dev/null || echo '{"casks":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
+        homepage=$(safe_jq_parse "$info" '.casks[0].homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.casks[0].desc' "Unable to retrieve description")
         echo "  - $cask:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
@@ -111,9 +135,10 @@ echo -e "\n${CYAN}📊 Processing new formulae in repositories...${RESET}"
 if [[ -s "$TEMP_DIR/new_formulae.txt" ]]; then
     echo -e "\n${BRIGHT_GREEN}🆕 New Formulae:${RESET}"
     while read -r formula; do
-        info=$(brew info --json=v2 "$formula")
-        homepage=$(echo "$info" | jq -r '.formulae[0].homepage')
-        desc=$(echo "$info" | jq -r '.formulae[0].desc')
+        # Get formula info with error handling
+        info=$(brew info --json=v2 "$formula" 2>/dev/null || echo '{"formulae":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
+        homepage=$(safe_jq_parse "$info" '.formulae[0].homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.formulae[0].desc' "Unable to retrieve description")
         echo "  - $formula:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
@@ -127,9 +152,10 @@ echo -e "\n${CYAN}📊 Processing new casks in repositories...${RESET}"
 if [[ -s "$TEMP_DIR/new_casks.txt" ]]; then
     echo -e "\n${BRIGHT_GREEN}🆕 New Casks:${RESET}"
     while read -r cask; do
-        info=$(brew info --json=v2 "$cask")
-        homepage=$(echo "$info" | jq -r '.casks[0].homepage')
-        desc=$(echo "$info" | jq -r '.casks[0].desc')
+        # Get cask info with error handling
+        info=$(brew info --json=v2 "$cask" 2>/dev/null || echo '{"casks":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
+        homepage=$(safe_jq_parse "$info" '.casks[0].homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.casks[0].desc' "Unable to retrieve description")
         echo "  - $cask:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
