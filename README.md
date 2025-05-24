@@ -55,6 +55,11 @@ brew_upgrade_tracker.sh
 - ⚙️ **Interactive Upgrade Process**: Asks for confirmation before running `brew upgrade`
 - 🎨 **Colorful Output**: Uses color-coded terminal output for better readability
 - 🧹 **Clean Operation**: Creates temporary files that are automatically removed upon completion
+- 📝 **Enhanced Error Handling**: 
+  - Gracefully handles package lookup failures
+  - Continues operation even when encountering non-critical errors
+  - Logs all errors to a dedicated log file for troubleshooting
+  - Provides clear warnings when issues occur
 
 ## 🖥️ Output Notes
 
@@ -65,16 +70,22 @@ brew_upgrade_tracker.sh
   - 🔴 Red: Error messages
 
 - The script is interactive and will prompt you to confirm before performing the actual package upgrades, giving you control over when to upgrade your system.
+- When non-critical errors occur, the script will:
+  - Continue execution rather than failing completely
+  - Log detailed error information to a temporary log file
+  - Display a warning message with the log file location
+  - Clean up the log file if no errors occurred
 
-## 🛑 Troubleshooting
+## 🚫 Troubleshooting
 
 If you encounter any issues:
 
 1. Ensure Homebrew is correctly installed and functioning
 2. Verify that jq is installed (`brew install jq`)
 3. Check that the script has execute permissions
+4. Review the log file if any warnings appear during execution
+5. For package-specific issues, try running `brew doctor`
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-

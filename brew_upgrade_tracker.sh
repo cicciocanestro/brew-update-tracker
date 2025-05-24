@@ -17,8 +17,19 @@ CYAN="\033[0;36m"
 YELLOW="\033[0;33m"
 RESET="\033[0m"
 
-# Exit on error
-set -e
+# Create log file for errors
+LOG_FILE="/tmp/brew-update-tracker-$(date +%Y%m%d-%H%M%S).log"
+touch "$LOG_FILE"
+
+# Custom error handling function
+log_error() {
+    local msg="$1"
+    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] ERROR: $msg" >> "$LOG_FILE"
+    echo -e "${YELLOW}Warning: $msg (See $LOG_FILE for details)${RESET}" >&2
+}
+
+# Set error handling - continue on errors but track them
+set +e
 
 # Helper function to safely parse JSON with jq
 # Usage: safe_jq_parse "json_string" ".path.to.field" ["default_value"]
@@ -57,7 +68,7 @@ fi
 
 # Create temporary directory
 TEMP_DIR=$(mktemp -d /tmp/brew-update-tracker.XXXXXX)
-trap "rm -rf $TEMP_DIR" EXIT
+trap "rm -rf $TEMP_DIR; echo -e \"${CYAN}Log file created at: $LOG_FILE${RESET}\"" EXIT
 
 echo -e "${BRIGHT_GREEN}🍺 Brew Update Tracker${RESET}"
 echo -e "${BRIGHT_GREEN}=======================${RESET}"
@@ -70,8 +81,16 @@ brew list --formula > "$TEMP_DIR/formulae_before.txt"
 brew list --cask > "$TEMP_DIR/casks_before.txt"
 
 # Get all available formulae and casks in repos before update
-brew search --formula '' > "$TEMP_DIR/available_formulae_before.txt"
-brew search --cask '' > "$TEMP_DIR/available_casks_before.txt"
+echo -e "Running brew search for formulae..." >> "$LOG_FILE"
+brew search --formula '' > "$TEMP_DIR/available_formulae_before.txt" 2>> "$LOG_FILE" || log_error "Failed to get complete formula list before update"
+
+echo -e "Running brew search for casks..." >> "$LOG_FILE"
+{ brew search --cask '' > "$TEMP_DIR/available_casks_before.txt"; } 2>> "$LOG_FILE"
+if [ $? -ne 0 ]; then
+    log_error "Failed to get complete cask list before update - continuing with partial results"
+    # Ensure the file exists even if the command failed
+    touch "$TEMP_DIR/available_casks_before.txt"
+fi
 
 # Step 2: Run brew update
 echo -e "\n${CYAN}🔄 Updating Homebrew...${RESET}"
@@ -83,8 +102,16 @@ brew list --formula > "$TEMP_DIR/formulae_after.txt"
 brew list --cask > "$TEMP_DIR/casks_after.txt"
 
 # Get all available formulae and casks in repos after update
-brew search --formula '' > "$TEMP_DIR/available_formulae_after.txt"
-brew search --cask '' > "$TEMP_DIR/available_casks_after.txt"
+echo -e "Running brew search for formulae after update..." >> "$LOG_FILE"
+brew search --formula '' > "$TEMP_DIR/available_formulae_after.txt" 2>> "$LOG_FILE" || log_error "Failed to get complete formula list after update"
+
+echo -e "Running brew search for casks after update..." >> "$LOG_FILE"
+{ brew search --cask '' > "$TEMP_DIR/available_casks_after.txt"; } 2>> "$LOG_FILE"
+if [ $? -ne 0 ]; then
+    log_error "Failed to get complete cask list after update - continuing with partial results"
+    # Ensure the file exists even if the command failed
+    touch "$TEMP_DIR/available_casks_after.txt"
+fi
 
 # Step 4: Find outdated packages
 echo -e "\n${CYAN}🔍 Finding outdated packages...${RESET}"
@@ -93,8 +120,21 @@ brew outdated --cask > "$TEMP_DIR/outdated_casks.txt"
 
 # Step 5: Find new packages in repos
 echo -e "\n${CYAN}🆕 Finding new packages in repositories...${RESET}"
-comm -13 "$TEMP_DIR/available_formulae_before.txt" "$TEMP_DIR/available_formulae_after.txt" > "$TEMP_DIR/new_formulae.txt"
-comm -13 "$TEMP_DIR/available_casks_before.txt" "$TEMP_DIR/available_casks_after.txt" > "$TEMP_DIR/new_casks.txt"
+
+# Make sure both files exist before using comm
+if [[ -f "$TEMP_DIR/available_formulae_before.txt" && -f "$TEMP_DIR/available_formulae_after.txt" ]]; then
+    comm -13 "$TEMP_DIR/available_formulae_before.txt" "$TEMP_DIR/available_formulae_after.txt" > "$TEMP_DIR/new_formulae.txt" 2>> "$LOG_FILE" || log_error "Failed to compare formula lists"
+else
+    log_error "Missing formula files for comparison"
+    touch "$TEMP_DIR/new_formulae.txt"
+fi
+
+if [[ -f "$TEMP_DIR/available_casks_before.txt" && -f "$TEMP_DIR/available_casks_after.txt" ]]; then
+    comm -13 "$TEMP_DIR/available_casks_before.txt" "$TEMP_DIR/available_casks_after.txt" > "$TEMP_DIR/new_casks.txt" 2>> "$LOG_FILE" || log_error "Failed to compare cask lists"
+else
+    log_error "Missing cask files for comparison"
+    touch "$TEMP_DIR/new_casks.txt"
+fi
 
 # Step 6: Process formulae
 echo -e "\n${CYAN}📊 Processing updated formulae...${RESET}"
@@ -182,6 +222,15 @@ if [[ $total_updates -gt 0 ]]; then
     fi
 else
     echo -e "\n${GREEN}✅ No packages to upgrade!${RESET}"
+fi
+
+# Check if there were any errors during execution
+if [ -s "$LOG_FILE" ]; then
+    echo -e "\n${YELLOW}Some non-critical errors occurred during execution.${RESET}"
+    echo -e "${YELLOW}See log file for details: $LOG_FILE${RESET}"
+else
+    # Remove empty log file if no errors occurred
+    rm -f "$LOG_FILE"
 fi
 
 echo -e "\n${BRIGHT_GREEN}🍺 Brew Update Tracker completed!${RESET}"
