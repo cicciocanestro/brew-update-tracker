@@ -68,7 +68,7 @@ fi
 
 # Create temporary directory
 TEMP_DIR=$(mktemp -d /tmp/brew-update-tracker.XXXXXX)
-trap "rm -rf $TEMP_DIR; echo -e \"${CYAN}Log file created at: $LOG_FILE${RESET}\"" EXIT
+trap "rm -rf $TEMP_DIR" EXIT
 
 echo -e "${BRIGHT_GREEN}🍺 Brew Update Tracker${RESET}"
 echo -e "${BRIGHT_GREEN}=======================${RESET}"
@@ -225,12 +225,18 @@ else
 fi
 
 # Check if there were any errors during execution
-if [ -s "$LOG_FILE" ]; then
+# Check if there were any actual errors (containing the word "ERROR") during execution
+if grep -q "ERROR" "$LOG_FILE" 2>/dev/null; then
     echo -e "\n${YELLOW}Some non-critical errors occurred during execution.${RESET}"
     echo -e "${YELLOW}See log file for details: $LOG_FILE${RESET}"
 else
-    # Remove empty log file if no errors occurred
+    # Remove log file if no errors occurred, only normal messages
     rm -f "$LOG_FILE"
+fi
+
+# Notify about log file if it still exists
+if [[ -f "$LOG_FILE" ]]; then
+    echo -e "${CYAN}Log file created at: $LOG_FILE${RESET}"
 fi
 
 echo -e "\n${BRIGHT_GREEN}🍺 Brew Update Tracker completed!${RESET}"
