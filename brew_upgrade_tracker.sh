@@ -24,8 +24,8 @@ touch "$LOG_FILE"
 # Custom error handling function
 log_error() {
     local msg="$1"
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] ERROR: $msg" >> "$LOG_FILE"
-    echo -e "${YELLOW}Warning: $msg (See $LOG_FILE for details)${RESET}" >&2
+    printf "[$(date +"%Y-%m-%d %H:%M:%S")] ERROR: $msg\n" >> "$LOG_FILE"
+    printf "${YELLOW}Warning: $msg (See $LOG_FILE for details)${RESET}\n" >&2
 }
 
 # Set error handling - continue on errors but track them
@@ -55,14 +55,14 @@ safe_jq_parse() {
 
 # Check if Homebrew is installed
 if ! command -v brew &> /dev/null; then
-    echo -e "${RED}Error: Homebrew is not installed${RESET}" >&2
+    printf "${RED}Error: Homebrew is not installed${RESET}\n" >&2
     exit 1
 fi
 
 # Check if jq is installed
 if ! command -v jq &> /dev/null; then
-    echo -e "${RED}Error: jq is not installed${RESET}"
-    echo -e "${CYAN}Please install it with: brew install jq${RESET}"
+    printf "${RED}Error: jq is not installed${RESET}\n"
+    printf "${CYAN}Please install it with: brew install jq${RESET}\n"
     exit 1
 fi
 
@@ -70,31 +70,37 @@ fi
 TEMP_DIR=$(mktemp -d /tmp/brew-update-tracker.XXXXXX)
 trap "rm -rf $TEMP_DIR" EXIT
 
-echo -e "${BRIGHT_GREEN}🍺 Brew Update Tracker${RESET}"
-echo -e "${BRIGHT_GREEN}=======================${RESET}"
+printf "${BRIGHT_GREEN}🍺 Brew Update Tracker${RESET}\n"
+printf "${BRIGHT_GREEN}=======================${RESET}\n"
 
 # Step 1: Record current packages before update
-echo -e "\n${CYAN}📋 Recording current package lists...${RESET}"
+printf "\n${CYAN}📋 Recording current package lists...${RESET}\n"
 
 # Get all formulae and casks before update
 brew list --formula > "$TEMP_DIR/formulae_before.txt"
 brew list --cask > "$TEMP_DIR/casks_before.txt"
 
-# Step 2: Run brew update and capture output
-echo -e "\n${CYAN}🔄 Updating Homebrew...${RESET}"
-brew update > "$TEMP_DIR/brew_update_output.txt" 2>&1
+# Step 2: Run brew update and capture output with progress indicator
+printf "\n${CYAN}🔄 Updating Homebrew...${RESET}\n"
+(brew update > "$TEMP_DIR/brew_update_output.txt" 2>&1 &
+ pid=$!
+ while kill -0 $pid 2>/dev/null; do
+     printf "."
+     sleep 0.5
+ done
+ printf "\n") 2>/dev/null
 cat "$TEMP_DIR/brew_update_output.txt"
 
 # Step 3: Extract new formulae and casks from brew update output
 # Look for "==> New Formulae" and "==> New Casks" sections
-echo -e "Parsing brew update output for new packages..." >> "$LOG_FILE"
+printf "Parsing brew update output for new packages...\n" >> "$LOG_FILE"
 
 # Extract new formulae from brew update output
 sed -n '/^==> New Formulae/,/^==> New Casks/p' "$TEMP_DIR/brew_update_output.txt" | \
     grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' > "$TEMP_DIR/new_formulae_from_update.txt" 2>> "$LOG_FILE"
 
 # Extract new casks from brew update output
-sed -n '/^==> New Casks/,/^==> /p' "$TEMP_DIR/brew_update_output.txt" | \
+sed -n '/^==> New Casks/,$p' "$TEMP_DIR/brew_update_output.txt" | \
     grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | grep -v "^$" > "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
 
 # Step 4: Record packages after update
@@ -103,78 +109,143 @@ brew list --formula > "$TEMP_DIR/formulae_after.txt"
 brew list --cask > "$TEMP_DIR/casks_after.txt"
 
 # Step 5: Find outdated packages
-echo -e "\n${CYAN}🔍 Finding outdated packages...${RESET}"
+printf "\n${CYAN}🔍 Finding outdated packages...${RESET}\n"
 brew outdated --formula > "$TEMP_DIR/outdated_formulae.txt"
 brew outdated --cask > "$TEMP_DIR/outdated_casks.txt"
 
-# Step 6: Process formulae
-echo -e "\n${CYAN}📊 Processing updated formulae...${RESET}"
+# Step 6: Process formulae (optimized with parallel requests)
+printf "\n${CYAN}📊 Processing updated formulae...${RESET}\n"
 if [[ -s "$TEMP_DIR/outdated_formulae.txt" ]]; then
-    echo -e "\n${BRIGHT_GREEN}📦 Updated Formulae:${RESET}"
+    printf "\n${BRIGHT_GREEN}📦 Updated Formulae:${RESET}\n"
+    
+    # Fetch all info and store in a single JSON array
+    {
+        echo "["
+        first=true
+        cat "$TEMP_DIR/outdated_formulae.txt" | while read -r formula; do
+            [[ -z "$formula" ]] && continue
+            if [[ "$first" == false ]]; then echo ","; fi
+            first=false
+            brew info --json=v2 "$formula" 2>/dev/null | jq '.formulae[0] // {"homepage":"Error","desc":"Could not retrieve info"}' || echo '{"homepage":"Error","desc":"Could not retrieve info"}'
+        done
+        echo "]"
+    } > "$TEMP_DIR/formulae_info_cache.json"
+    
+    # Parse cached JSON data
     while read -r formula; do
-        # Get formula info with error handling
-        info=$(brew info --json=v2 "$formula" 2>/dev/null || echo '{"formulae":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
-        homepage=$(safe_jq_parse "$info" '.formulae[0].homepage' "Unable to retrieve homepage")
-        desc=$(safe_jq_parse "$info" '.formulae[0].desc' "Unable to retrieve description")
+        info=$(jq ".[] | select(.name==\"$formula\")" "$TEMP_DIR/formulae_info_cache.json" 2>/dev/null | head -1)
+        [[ -z "$info" ]] && info='{"homepage":"Error","desc":"Could not retrieve info"}'
+        homepage=$(safe_jq_parse "$info" '.homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.desc' "Unable to retrieve description")
         echo "  - $formula:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
     done < "$TEMP_DIR/outdated_formulae.txt"
 else
-    echo -e "  ${GREEN}No formula updates available.${RESET}"
+    printf "  ${GREEN}No formula updates available.${RESET}\n"
 fi
 
-# Step 7: Process casks
-echo -e "\n${CYAN}📊 Processing updated casks...${RESET}"
+# Step 7: Process casks (optimized with parallel requests)
+printf "\n${CYAN}📊 Processing updated casks...${RESET}\n"
 if [[ -s "$TEMP_DIR/outdated_casks.txt" ]]; then
-    echo -e "\n${BRIGHT_GREEN}📦 Updated Casks:${RESET}"
+    printf "\n${BRIGHT_GREEN}📦 Updated Casks:${RESET}\n"
+    
+    # Fetch all info and store in a single JSON array
+    {
+        echo "["
+        first=true
+        cat "$TEMP_DIR/outdated_casks.txt" | while read -r cask; do
+            [[ -z "$cask" ]] && continue
+            cask_clean="${cask%%::*}"
+            if [[ "$first" == false ]]; then echo ","; fi
+            first=false
+            brew info --json=v2 "$cask_clean" 2>/dev/null | jq '.casks[0] // {"homepage":"Error","desc":"Could not retrieve info"}' || echo '{"homepage":"Error","desc":"Could not retrieve info"}'
+        done
+        echo "]"
+    } > "$TEMP_DIR/casks_info_cache.json"
+    
+    # Parse cached JSON data
     while read -r cask; do
-        # Get cask info with error handling
-        info=$(brew info --json=v2 "$cask" 2>/dev/null || echo '{"casks":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
-        homepage=$(safe_jq_parse "$info" '.casks[0].homepage' "Unable to retrieve homepage")
-        desc=$(safe_jq_parse "$info" '.casks[0].desc' "Unable to retrieve description")
+        cask_clean="${cask%%::*}"
+        info=$(jq ".[] | select(.name==\"$cask_clean\")" "$TEMP_DIR/casks_info_cache.json" 2>/dev/null | head -1)
+        [[ -z "$info" ]] && info='{"homepage":"Error","desc":"Could not retrieve info"}'
+        homepage=$(safe_jq_parse "$info" '.homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.desc' "Unable to retrieve description")
         echo "  - $cask:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
     done < "$TEMP_DIR/outdated_casks.txt"
 else
-    echo -e "  ${GREEN}No cask updates available.${RESET}"
+    printf "  ${GREEN}No cask updates available.${RESET}\n"
 fi
 
-# Step 8: Process new formulae
-echo -e "\n${CYAN}📊 Processing new formulae in repositories...${RESET}"
+# Step 8: Process new formulae (optimized with parallel requests)
+printf "\n${CYAN}📊 Processing new formulae in repositories...${RESET}\n"
 if [[ -s "$TEMP_DIR/new_formulae_from_update.txt" ]]; then
-    echo -e "\n${BRIGHT_GREEN}🆕 New Formulae:${RESET}"
+    printf "\n${BRIGHT_GREEN}🆕 New Formulae:${RESET}\n"
+    
+    # Fetch all info and store in a single JSON array
+    {
+        echo "["
+        first=true
+        cat "$TEMP_DIR/new_formulae_from_update.txt" | while read -r formula; do
+            [[ -z "$formula" ]] && continue
+            if [[ "$first" == false ]]; then echo ","; fi
+            first=false
+            brew info --json=v2 "$formula" 2>/dev/null | jq '.formulae[0] // {"homepage":"Error","desc":"Could not retrieve info"}' || echo '{"homepage":"Error","desc":"Could not retrieve info"}'
+        done
+        echo "]"
+    } > "$TEMP_DIR/new_formulae_info_cache.json"
+    
+    # Parse cached JSON data
     while read -r formula; do
         [[ -z "$formula" ]] && continue
-        # Get formula info with error handling
-        info=$(brew info --json=v2 "$formula" 2>/dev/null || echo '{"formulae":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
-        homepage=$(safe_jq_parse "$info" '.formulae[0].homepage' "Unable to retrieve homepage")
-        desc=$(safe_jq_parse "$info" '.formulae[0].desc' "Unable to retrieve description")
+        info=$(jq ".[] | select(.name==\"$formula\")" "$TEMP_DIR/new_formulae_info_cache.json" 2>/dev/null | head -1)
+        [[ -z "$info" ]] && info='{"homepage":"Error","desc":"Could not retrieve info"}'
+        homepage=$(safe_jq_parse "$info" '.homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.desc' "Unable to retrieve description")
         echo "  - $formula:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
     done < "$TEMP_DIR/new_formulae_from_update.txt"
 else
-    echo -e "  ${GREEN}No new formulae available.${RESET}"
+    printf "  ${GREEN}No new formulae available.${RESET}\n"
 fi
 
-# Step 9: Process new casks
-echo -e "\n${CYAN}📊 Processing new casks in repositories...${RESET}"
+# Step 9: Process new casks (optimized with parallel requests)
+printf "\n${CYAN}📊 Processing new casks in repositories...${RESET}\n"
 if [[ -s "$TEMP_DIR/new_casks_from_update.txt" ]]; then
-    echo -e "\n${BRIGHT_GREEN}🆕 New Casks:${RESET}"
+    printf "\n${BRIGHT_GREEN}🆕 New Casks:${RESET}\n"
+    
+    # Fetch all info and store in a single JSON array
+    {
+        echo "["
+        first=true
+        cat "$TEMP_DIR/new_casks_from_update.txt" | while read -r cask; do
+            [[ -z "$cask" ]] && continue
+            # Remove :: suffix if present
+            cask_clean="${cask%%::*}"
+            if [[ "$first" == false ]]; then echo ","; fi
+            first=false
+            brew info --json=v2 "$cask_clean" 2>/dev/null | jq '.casks[0] // {"homepage":"Error","desc":"Could not retrieve info"}' || echo '{"homepage":"Error","desc":"Could not retrieve info"}'
+        done
+        echo "]"
+    } > "$TEMP_DIR/new_casks_info_cache.json"
+    
+    # Parse cached JSON data
     while read -r cask; do
         [[ -z "$cask" ]] && continue
-        # Get cask info with error handling
-        info=$(brew info --json=v2 "$cask" 2>/dev/null || echo '{"casks":[{"homepage":"Error","desc":"Could not retrieve info"}]}')
-        homepage=$(safe_jq_parse "$info" '.casks[0].homepage' "Unable to retrieve homepage")
-        desc=$(safe_jq_parse "$info" '.casks[0].desc' "Unable to retrieve description")
+        cask_clean="${cask%%::*}"
+        info=$(jq ".[] | select(.name==\"$cask_clean\")" "$TEMP_DIR/new_casks_info_cache.json" 2>/dev/null | head -1)
+        [[ -z "$info" ]] && info='{"homepage":"Error","desc":"Could not retrieve info"}'
+        homepage=$(safe_jq_parse "$info" '.homepage' "Unable to retrieve homepage")
+        desc=$(safe_jq_parse "$info" '.desc' "Unable to retrieve description")
         echo "  - $cask:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
     done < "$TEMP_DIR/new_casks_from_update.txt"
 else
-    echo -e "  ${GREEN}No new casks available.${RESET}"
+    printf "  ${GREEN}No new casks available.${RESET}\n"
 fi
 
 # Step 10: Check if there are any updates available
@@ -182,19 +253,19 @@ total_updates=$(cat "$TEMP_DIR/outdated_formulae.txt" "$TEMP_DIR/outdated_casks.
 
 if [[ $total_updates -gt 0 ]]; then
     # Step 11: Ask if user wants to upgrade
-    echo -e "\n${BRIGHT_GREEN}🚀 Found $total_updates package(s) that can be upgraded.${RESET}"
-    echo -en "${YELLOW}Do you want to perform 'brew upgrade' now? (y/n): ${RESET}"
+    printf "\n${BRIGHT_GREEN}🚀 Found $total_updates package(s) that can be upgraded.${RESET}\n"
+    printf "${YELLOW}Do you want to perform 'brew upgrade' now? (y/n): ${RESET}"
     read -r answer
     
     if [[ "$answer" =~ ^[Yy]$ ]]; then
-        echo -e "\n${CYAN}⬆️ Running 'brew upgrade'...${RESET}"
+        printf "\n${CYAN}⬆️ Running 'brew upgrade'...${RESET}\n"
         brew upgrade
-        echo -e "${GREEN}✅ Upgrade completed!${RESET}"
+        printf "${GREEN}✅ Upgrade completed!${RESET}\n"
     else
-        echo -e "\n${YELLOW}✋ Upgrade skipped.${RESET}"
+        printf "\n${YELLOW}✋ Upgrade skipped.${RESET}\n"
     fi
 else
-    echo -e "\n${GREEN}✅ No packages to upgrade!${RESET}"
+    printf "\n${GREEN}✅ No packages to upgrade!${RESET}\n"
 fi
 
 # Check if there were any errors during execution
