@@ -97,11 +97,11 @@ printf "Parsing brew update output for new packages...\n" >> "$LOG_FILE"
 
 # Extract new formulae from brew update output
 sed -n '/^==> New Formulae/,/^==> New Casks/p' "$TEMP_DIR/brew_update_output.txt" | \
-    grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' > "$TEMP_DIR/new_formulae_from_update.txt" 2>> "$LOG_FILE"
+    grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | sed 's/:$//' > "$TEMP_DIR/new_formulae_from_update.txt" 2>> "$LOG_FILE"
 
 # Extract new casks from brew update output
 sed -n '/^==> New Casks/,$p' "$TEMP_DIR/brew_update_output.txt" | \
-    grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | grep -v "^$" > "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
+    grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | sed 's/:$//' | grep -v "^$" > "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
 
 # Step 4: Record packages after update
 # Get all formulae and casks after update
