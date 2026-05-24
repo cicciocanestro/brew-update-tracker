@@ -96,16 +96,14 @@ cat "$TEMP_DIR/brew_update_output.txt"
 printf "Parsing brew update output for new packages...\n" >> "$LOG_FILE"
 
 # Extract new formulae from brew update output
-sed -n '/^==> New Formulae/,/^==> New Casks/p' "$TEMP_DIR/brew_update_output.txt" | \
-    grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | sed 's/:$//' > "$TEMP_DIR/new_formulae_from_update.txt" 2>> "$LOG_FILE"
+# More precise extraction: only lines between "==> New Formulae" and next "==>" or end of file
+sed -n '/^==> New Formulae/,/^==>/p' "$TEMP_DIR/brew_update_output.txt" | \
+    sed -n '2,/^==>/p' | grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | sed 's/:$//' > "$TEMP_DIR/new_formulae_from_update.txt" 2>> "$LOG_FILE"
 
 # Extract new casks from brew update output
-sed -n '/^==> New Casks/,$p' "$TEMP_DIR/brew_update_output.txt" | \
-    grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | sed 's/:$//' | grep -v "^$" > "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
-
-# Also extract casks that have descriptions after colon (format: "cask-name: description")
-sed -n '/^==> New Casks/,$p' "$TEMP_DIR/brew_update_output.txt" | \
-    grep -v "^==>" | sed '/^[[:space:]]*$/d' | grep ":" | awk -F: '{print $1}' | sed 's/^[[:space:]]*//' >> "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
+# More precise extraction: only lines between "==> New Casks" and next "==>" or end of file
+sed -n '/^==> New Casks/,/^==>/p' "$TEMP_DIR/brew_update_output.txt" | \
+    sed -n '2,/^==>/p' | grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk -F: '{print $1}' | sed 's/:$//' | sed 's/^[[:space:]]*//' | grep -v "^$" > "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
 
 # Remove duplicates
 sort -u "$TEMP_DIR/new_casks_from_update.txt" -o "$TEMP_DIR/new_casks_from_update.txt"
@@ -161,31 +159,15 @@ else
     printf "  ${GREEN}No cask updates available.${RESET}\n"
 fi
 
-# Step 8: Process new formulae (optimized with parallel requests)
+# Step 8: Process new formulae
 printf "\n${CYAN}📊 Processing new formulae in repositories...${RESET}\n"
 if [[ -s "$TEMP_DIR/new_formulae_from_update.txt" ]]; then
     printf "\n${BRIGHT_GREEN}🆕 New Formulae:${RESET}\n"
-    
-    # Fetch all info and store in a single JSON array
-    {
-        echo "["
-        first=true
-        cat "$TEMP_DIR/new_formulae_from_update.txt" | while read -r formula; do
-            [[ -z "$formula" ]] && continue
-            if [[ "$first" == false ]]; then echo ","; fi
-            first=false
-            brew info --json=v2 "$formula" 2>/dev/null | jq '.formulae[0] // {"homepage":"Error","desc":"Could not retrieve info"}' || echo '{"homepage":"Error","desc":"Could not retrieve info"}'
-        done
-        echo "]"
-    } > "$TEMP_DIR/new_formulae_info_cache.json"
-    
-    # Parse cached JSON data
     while read -r formula; do
         [[ -z "$formula" ]] && continue
-        info=$(jq ".[] | select(.name==\"$formula\")" "$TEMP_DIR/new_formulae_info_cache.json" 2>/dev/null | head -1)
-        [[ -z "$info" ]] && info='{"homepage":"Error","desc":"Could not retrieve info"}'
-        homepage=$(safe_jq_parse "$info" '.homepage' "Unable to retrieve homepage")
-        desc=$(safe_jq_parse "$info" '.desc' "Unable to retrieve description")
+        # Get info directly for each new formula
+        homepage=$(brew info --json=v2 "$formula" 2>/dev/null | jq -r '.formulae[0].homepage // .homepage // "Unable to retrieve homepage"')
+        desc=$(brew info --json=v2 "$formula" 2>/dev/null | jq -r '.formulae[0].desc // .desc // "Unable to retrieve description"')
         echo "  - $formula:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
@@ -194,34 +176,16 @@ else
     printf "  ${GREEN}No new formulae available.${RESET}\n"
 fi
 
-# Step 9: Process new casks (optimized with parallel requests)
+# Step 9: Process new casks
 printf "\n${CYAN}📊 Processing new casks in repositories...${RESET}\n"
 if [[ -s "$TEMP_DIR/new_casks_from_update.txt" ]]; then
     printf "\n${BRIGHT_GREEN}🆕 New Casks:${RESET}\n"
-    
-    # Fetch all info and store in a single JSON array
-    {
-        echo "["
-        first=true
-        cat "$TEMP_DIR/new_casks_from_update.txt" | while read -r cask; do
-            [[ -z "$cask" ]] && continue
-            # Remove :: suffix if present
-            cask_clean="${cask%%::*}"
-            if [[ "$first" == false ]]; then echo ","; fi
-            first=false
-            brew info --json=v2 "$cask_clean" 2>/dev/null | jq '.casks[0] // {"homepage":"Error","desc":"Could not retrieve info"}' || echo '{"homepage":"Error","desc":"Could not retrieve info"}'
-        done
-        echo "]"
-    } > "$TEMP_DIR/new_casks_info_cache.json"
-    
-    # Parse cached JSON data
     while read -r cask; do
         [[ -z "$cask" ]] && continue
         cask_clean="${cask%%::*}"
-        info=$(jq ".[] | select(.name==\"$cask_clean\")" "$TEMP_DIR/new_casks_info_cache.json" 2>/dev/null | head -1)
-        [[ -z "$info" ]] && info='{"homepage":"Error","desc":"Could not retrieve info"}'
-        homepage=$(safe_jq_parse "$info" '.homepage' "Unable to retrieve homepage")
-        desc=$(safe_jq_parse "$info" '.desc' "Unable to retrieve description")
+        # Get info directly for each new cask
+        homepage=$(brew info --json=v2 "$cask_clean" 2>/dev/null | jq -r '.casks[0].homepage // .homepage // "Unable to retrieve homepage"')
+        desc=$(brew info --json=v2 "$cask_clean" 2>/dev/null | jq -r '.casks[0].desc // .desc // "Unable to retrieve description"')
         echo "  - $cask:"
         echo "      Homepage: $homepage"
         echo "      Description: $desc"
