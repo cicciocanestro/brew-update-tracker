@@ -89,3 +89,7 @@ If you encounter any issues:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a summary of recent fixes and improvements. The latest release (v1.1.0) includes reliability and parsing fixes for `brew update` output, improved error handling, and cleanup of debug/test artifacts.
