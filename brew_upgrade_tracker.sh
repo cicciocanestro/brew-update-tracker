@@ -31,28 +31,6 @@ log_error() {
 # Set error handling - continue on errors but track them
 set +e
 
-# Helper function to safely parse JSON with jq
-# Usage: safe_jq_parse "json_string" ".path.to.field" ["default_value"]
-safe_jq_parse() {
-    local json="$1"
-    local query="$2"
-    local default="${3:-N/A}"
-    
-    # Remove control characters that can cause jq to fail
-    local sanitized_json=$(echo "$json" | tr -d '\000-\037')
-    
-    # Try to parse with jq, with error handling
-    local result
-    result=$(echo "$sanitized_json" | jq -r "$query" 2>/dev/null) || result="$default"
-    
-    # Check if result is null or empty
-    if [[ "$result" == "null" || -z "$result" ]]; then
-        echo "$default"
-    else
-        echo "$result"
-    fi
-}
-
 # Check if Homebrew is installed
 if ! command -v brew &> /dev/null; then
     printf "${RED}Error: Homebrew is not installed${RESET}\n" >&2
@@ -75,8 +53,6 @@ printf "${BRIGHT_GREEN}=======================${RESET}\n"
 
 # Step 1: Record current packages before update
 printf "\n${CYAN}📋 Recording current package lists...${RESET}\n"
-
-# Get all formulae and casks before update
 brew list --formula > "$TEMP_DIR/formulae_before.txt"
 brew list --cask > "$TEMP_DIR/casks_before.txt"
 
@@ -92,107 +68,65 @@ printf "\n${CYAN}🔄 Updating Homebrew...${RESET}\n"
 cat "$TEMP_DIR/brew_update_output.txt"
 
 # Step 3: Extract new formulae and casks from brew update output
-# Look for "==> New Formulae" and "==> New Casks" sections
 printf "Parsing brew update output for new packages...\n" >> "$LOG_FILE"
 
-# Extract new formulae from brew update output
-# More precise extraction: only lines between "==> New Formulae" and next "==>" or end of file
 sed -n '/^==> New Formulae/,/^==>/p' "$TEMP_DIR/brew_update_output.txt" | \
     sed -n '2,/^==>/p' | grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk '{print $1}' | sed 's/:$//' > "$TEMP_DIR/new_formulae_from_update.txt" 2>> "$LOG_FILE"
 
-# Extract new casks from brew update output
-# More precise extraction: only lines between "==> New Casks" and next "==>" or end of file
 sed -n '/^==> New Casks/,/^==>/p' "$TEMP_DIR/brew_update_output.txt" | \
     sed -n '2,/^==>/p' | grep -v "^==>" | sed '/^[[:space:]]*$/d' | awk -F: '{print $1}' | sed 's/:$//' | sed 's/^[[:space:]]*//' | grep -v "^$" > "$TEMP_DIR/new_casks_from_update.txt" 2>> "$LOG_FILE"
 
-# Remove duplicates
 sort -u "$TEMP_DIR/new_casks_from_update.txt" -o "$TEMP_DIR/new_casks_from_update.txt"
 
 # Step 4: Record packages after update
-# Get all formulae and casks after update
 brew list --formula > "$TEMP_DIR/formulae_after.txt"
 brew list --cask > "$TEMP_DIR/casks_after.txt"
 
-# Step 5: Find outdated packages
+# Step 5: Find outdated packages using JSON (Più sicuro e pulito)
 printf "\n${CYAN}🔍 Finding outdated packages...${RESET}\n"
-brew outdated --formula > "$TEMP_DIR/outdated_formulae.txt"
-brew outdated --cask > "$TEMP_DIR/outdated_casks.txt"
+brew outdated --json=v2 > "$TEMP_DIR/outdated.json"
 
-# Clean outdated package names (remove version info in parentheses)
-sed -i '' 's/ ([^)]*)$//' "$TEMP_DIR/outdated_formulae.txt"
-sed -i '' 's/ ([^)]*)$//' "$TEMP_DIR/outdated_casks.txt"
+# Estraiamo i nomi direttamente dal JSON senza usare sed
+jq -r '.formulae[].name' "$TEMP_DIR/outdated.json" > "$TEMP_DIR/outdated_formulae.txt" 2>/dev/null
+jq -r '.casks[].name' "$TEMP_DIR/outdated.json" > "$TEMP_DIR/outdated_casks.txt" 2>/dev/null
 
-# Step 6: Process formulae (simplified approach)
-printf "\n${CYAN}📊 Processing updated formulae...${RESET}\n"
-if [[ -s "$TEMP_DIR/outdated_formulae.txt" ]]; then
-    printf "\n${BRIGHT_GREEN}📦 Updated Formulae:${RESET}\n"
-    
-    while read -r formula; do
-        [[ -z "$formula" ]] && continue
-        # Get info directly for each formula
-        homepage=$(brew info --json=v2 "$formula" 2>/dev/null | jq -r '.formulae[0].homepage // "Unable to retrieve homepage"')
-        desc=$(brew info --json=v2 "$formula" 2>/dev/null | jq -r '.formulae[0].desc // "Unable to retrieve description"')
-        echo "  - $formula:"
-        echo "      Homepage: $homepage"
-        echo "      Description: $desc"
-    done < "$TEMP_DIR/outdated_formulae.txt"
-else
-    printf "  ${GREEN}No formula updates available.${RESET}\n"
-fi
 
-# Step 7: Process casks (simplified approach)
-printf "\n${CYAN}📊 Processing updated casks...${RESET}\n"
-if [[ -s "$TEMP_DIR/outdated_casks.txt" ]]; then
-    printf "\n${BRIGHT_GREEN}📦 Updated Casks:${RESET}\n"
-    
-    while read -r cask; do
-        [[ -z "$cask" ]] && continue
-        cask_clean="${cask%%::*}"
-        # Get info directly for each cask
-        homepage=$(brew info --json=v2 "$cask_clean" 2>/dev/null | jq -r '.casks[0].homepage // "Unable to retrieve homepage"')
-        desc=$(brew info --json=v2 "$cask_clean" 2>/dev/null | jq -r '.casks[0].desc // "Unable to retrieve description"')
-        echo "  - $cask:"
-        echo "      Homepage: $homepage"
-        echo "      Description: $desc"
-    done < "$TEMP_DIR/outdated_casks.txt"
-else
-    printf "  ${GREEN}No cask updates available.${RESET}\n"
-fi
+# --- FUNZIONE DI SUPPORTO PER L'ELABORAZIONE IN BLOCCO ---
+# Questa funzione accetta una lista di pacchetti, li passa a brew info tutti in una volta,
+# e usa jq per formattare l'output. È incredibilmente più veloce di un ciclo while.
+process_packages() {
+    local type="$1"       # "formulae" o "casks"
+    local file="$2"       # File contenente i nomi dei pacchetti
+    local title="$3"      # Titolo da stampare
+    local jq_query="$4"   # Query jq per formattare l'output
 
-# Step 8: Process new formulae
-printf "\n${CYAN}📊 Processing new formulae in repositories...${RESET}\n"
-if [[ -s "$TEMP_DIR/new_formulae_from_update.txt" ]]; then
-    printf "\n${BRIGHT_GREEN}🆕 New Formulae:${RESET}\n"
-    while read -r formula; do
-        [[ -z "$formula" ]] && continue
-        # Get info directly for each new formula
-        homepage=$(brew info --json=v2 "$formula" 2>/dev/null | jq -r '.formulae[0].homepage // .homepage // "Unable to retrieve homepage"')
-        desc=$(brew info --json=v2 "$formula" 2>/dev/null | jq -r '.formulae[0].desc // .desc // "Unable to retrieve description"')
-        echo "  - $formula:"
-        echo "      Homepage: $homepage"
-        echo "      Description: $desc"
-    done < "$TEMP_DIR/new_formulae_from_update.txt"
-else
-    printf "  ${GREEN}No new formulae available.${RESET}\n"
-fi
+    printf "\n${CYAN}📊 Processing ${title}...${RESET}\n"
+    if [[ -s "$file" ]]; then
+        printf "\n${BRIGHT_GREEN}${title}:${RESET}\n"
+        # Usiamo xargs per passare tutti i nomi a brew info in un solo comando
+        cat "$file" | xargs brew info --json=v2 2>/dev/null | jq -r "$jq_query"
+    else
+        printf "  ${GREEN}No packages available.${RESET}\n"
+    fi
+}
 
-# Step 9: Process new casks
-printf "\n${CYAN}📊 Processing new casks in repositories...${RESET}\n"
+# Query JQ per formattare l'output di Formulae e Casks
+JQ_FORMULAE_QUERY='.formulae[] | "  - \(.name):\n      Homepage: \(.homepage // "Unable to retrieve homepage")\n      Description: \(.desc // "Unable to retrieve description")"'
+JQ_CASKS_QUERY='.casks[] | "  - \(.token):\n      Homepage: \(.homepage // "Unable to retrieve homepage")\n      Description: \(.desc // "Unable to retrieve description")"'
+
+# Step 6 & 7: Process outdated packages (Bulk)
+process_packages "formulae" "$TEMP_DIR/outdated_formulae.txt" "📦 Updated Formulae" "$JQ_FORMULAE_QUERY"
+process_packages "casks" "$TEMP_DIR/outdated_casks.txt" "📦 Updated Casks" "$JQ_CASKS_QUERY"
+
+# Step 8 & 9: Process new packages (Bulk)
+# Puliamo i cask nuovi da eventuali tap per sicurezza prima di passarli a brew info
 if [[ -s "$TEMP_DIR/new_casks_from_update.txt" ]]; then
-    printf "\n${BRIGHT_GREEN}🆕 New Casks:${RESET}\n"
-    while read -r cask; do
-        [[ -z "$cask" ]] && continue
-        cask_clean="${cask%%::*}"
-        # Get info directly for each new cask
-        homepage=$(brew info --json=v2 "$cask_clean" 2>/dev/null | jq -r '.casks[0].homepage // .homepage // "Unable to retrieve homepage"')
-        desc=$(brew info --json=v2 "$cask_clean" 2>/dev/null | jq -r '.casks[0].desc // .desc // "Unable to retrieve description"')
-        echo "  - $cask:"
-        echo "      Homepage: $homepage"
-        echo "      Description: $desc"
-    done < "$TEMP_DIR/new_casks_from_update.txt"
-else
-    printf "  ${GREEN}No new casks available.${RESET}\n"
+    sed -i '' 's/.*:://' "$TEMP_DIR/new_casks_from_update.txt"
 fi
+
+process_packages "formulae" "$TEMP_DIR/new_formulae_from_update.txt" "🆕 New Formulae" "$JQ_FORMULAE_QUERY"
+process_packages "casks" "$TEMP_DIR/new_casks_from_update.txt" "🆕 New Casks" "$JQ_CASKS_QUERY"
+
 
 # Step 10: Check if there are any updates available
 total_updates=$(cat "$TEMP_DIR/outdated_formulae.txt" "$TEMP_DIR/outdated_casks.txt" | wc -l | tr -d ' ')
@@ -215,16 +149,13 @@ else
 fi
 
 # Check if there were any errors during execution
-# Check if there were any actual errors (containing the word "ERROR") during execution
 if grep -q "ERROR" "$LOG_FILE" 2>/dev/null; then
     echo -e "\n${YELLOW}Some non-critical errors occurred during execution.${RESET}"
     echo -e "${YELLOW}See log file for details: $LOG_FILE${RESET}"
 else
-    # Remove log file if no errors occurred, only normal messages
     rm -f "$LOG_FILE"
 fi
 
-# Notify about log file if it still exists
 if [[ -f "$LOG_FILE" ]]; then
     echo -e "${CYAN}Log file created at: $LOG_FILE${RESET}"
 fi
