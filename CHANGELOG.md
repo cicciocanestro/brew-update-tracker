@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [1.1.0] - 2026-05-27
+
+### Added
+- Funzione `process_packages` per la gestione in blocco (bulk) delle chiamate alle API di Homebrew.
+- Pulizia automatica dei nomi dei tap (es. `tap/nome`) dai nuovi cask prima della richiesta delle informazioni.
+
+### Changed
+- **Performance:** Sostituiti i lenti cicli `while` individuali con un'elaborazione in blocco tramite `xargs` e `jq` per `brew info`, riducendo drasticamente i tempi di esecuzione.
+- Il comando `brew outdated` ora utilizza l'output nativo `--json=v2` invece di un fragile parsing testuale tramite `sed`, rendendo lo script molto più robusto ai futuri aggiornamenti di Homebrew.
+
+### Removed
+- Rimossa la funzione `safe_jq_parse` in quanto sostituita nativamente dalle query ottimizzate di `jq` nell'elaborazione in blocco.
+
 ## 2026-05-24 — Migliorie principali
 
 - Fix: Estrazione precisa di *New Formulae* e *New Casks* dall'output di `brew update` (limita la sezione fino al successivo `==>`).
