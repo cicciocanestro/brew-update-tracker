@@ -3,31 +3,31 @@
 ## [1.1.0] - 2026-05-27
 
 ### Added
-- Funzione `process_packages` per la gestione in blocco (bulk) delle chiamate alle API di Homebrew.
-- Pulizia automatica dei nomi dei tap (es. `tap/nome`) dai nuovi cask prima della richiesta delle informazioni.
+- `process_packages` function for bulk handling of Homebrew API calls.
+- Automatic cleanup of tap names (e.g., `tap/name`) from new casks before fetching information.
 
 ### Changed
-- **Performance:** Sostituiti i lenti cicli `while` individuali con un'elaborazione in blocco tramite `xargs` e `jq` per `brew info`, riducendo drasticamente i tempi di esecuzione.
-- Il comando `brew outdated` ora utilizza l'output nativo `--json=v2` invece di un fragile parsing testuale tramite `sed`, rendendo lo script molto più robusto ai futuri aggiornamenti di Homebrew.
+- **Performance:** Replaced slow individual `while` loops with bulk processing via `xargs` and `jq` for `brew info`, drastically reducing execution times.
+- The `brew outdated` command now uses native `--json=v2` output instead of fragile textual parsing via `sed`, making the script much more robust to future Homebrew updates.
 
 ### Removed
-- Rimossa la funzione `safe_jq_parse` in quanto sostituita nativamente dalle query ottimizzate di `jq` nell'elaborazione in blocco.
+- Removed the `safe_jq_parse` function as it is now natively replaced by optimized `jq` queries in bulk processing.
 
-## 2026-05-24 — Migliorie principali
+## 2026-05-24 — Major improvements
 
-- Fix: Estrazione precisa di *New Formulae* e *New Casks* dall'output di `brew update` (limita la sezione fino al successivo `==>`).
-- Fix: Normalizzazione dei nomi (rimozione di suffissi `:` e descrizioni dopo `:` per i cask; rimozione versioni tra parentesi da `brew outdated`).
-- Miglioria: Esecuzione di `brew update` in background con indicatore di progresso; output catturato in file temporaneo per parsing più affidabile.
-- Fix: Processo di recupero informazioni semplificato — per ogni pacchetto si usa `brew info --json=v2` e si leggono `homepage`/`desc` direttamente (più robusto rispetto alla costruzione di grandi array JSON).
-- Fix: Migliorata gestione dei messaggi/log (`printf` invece di `echo -e`) e migliore gestione di errori non critici.
-- Rimozione: Tolte chiamate costose a `brew search` per il confronto completo delle liste (più veloce e meno fragile).
-- Pulizia: Rimozione di script di debug e file di test temporanei dal workspace.
+- Fix: Precise extraction of *New Formulae* and *New Casks* from `brew update` output (limits section until next `==>`).
+- Fix: Normalization of names (removal of `:` suffixes and descriptions after `:` for casks; removal of versions in parentheses from `brew outdated`).
+- Improvement: Running `brew update` in background with progress indicator; output captured to temporary file for more reliable parsing.
+- Fix: Simplified information retrieval process — for each package, `brew info --json=v2` is used and `homepage`/`desc` are read directly (more robust than building large JSON arrays).
+- Fix: Improved message/log handling (`printf` instead of `echo -e`) and better handling of non-critical errors.
+- Removal: Removed costly `brew search` calls for complete list comparison (faster and less fragile).
+- Cleanup: Removed debug scripts and temporary test files from workspace.
 
-### Perché queste modifiche
-Le modifiche puntano a rendere lo script più affidabile nel parsing dell'output di Homebrew, ridurre falsi positivi (nomi errati nelle sezioni "New"), e mostrare homepage/descrizioni reali per i pacchetti quando disponibili. Alcuni trade‑off: la nuova strategia chiama `brew info` per ogni pacchetto (leggermente più lenta), ma è più robusta.
+### Why these changes
+The changes aim to make the script more reliable in parsing Homebrew output, reduce false positives (wrong names in "New" sections), and show real homepage/descriptions for packages when available. Some trade-offs: the new strategy calls `brew info` for each package (slightly slower), but is more robust.
 
 ---
 
-File rilevanti modificati: `brew_upgrade_tracker.sh` (diverse revisioni tra 2025 e 2026).
+Relevant files modified: `brew_upgrade_tracker.sh` (several revisions between 2025 and 2026).
 
-(Commit aggiunto automaticamente il 2026-05-24)
+(Automatically added commit on 2026-05-24)

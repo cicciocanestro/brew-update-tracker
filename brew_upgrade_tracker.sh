@@ -82,35 +82,35 @@ sort -u "$TEMP_DIR/new_casks_from_update.txt" -o "$TEMP_DIR/new_casks_from_updat
 brew list --formula > "$TEMP_DIR/formulae_after.txt"
 brew list --cask > "$TEMP_DIR/casks_after.txt"
 
-# Step 5: Find outdated packages using JSON (Più sicuro e pulito)
+# Step 5: Find outdated packages using JSON (Safer and cleaner)
 printf "\n${CYAN}🔍 Finding outdated packages...${RESET}\n"
 brew outdated --json=v2 > "$TEMP_DIR/outdated.json"
 
-# Estraiamo i nomi direttamente dal JSON senza usare sed
+# Extract names directly from JSON without using sed
 jq -r '.formulae[].name' "$TEMP_DIR/outdated.json" > "$TEMP_DIR/outdated_formulae.txt" 2>/dev/null
 jq -r '.casks[].name' "$TEMP_DIR/outdated.json" > "$TEMP_DIR/outdated_casks.txt" 2>/dev/null
 
 
-# --- FUNZIONE DI SUPPORTO PER L'ELABORAZIONE IN BLOCCO ---
-# Questa funzione accetta una lista di pacchetti, li passa a brew info tutti in una volta,
-# e usa jq per formattare l'output. È incredibilmente più veloce di un ciclo while.
+# --- SUPPORT FUNCTION FOR BULK PROCESSING ---
+# This function accepts a list of packages, passes them all to brew info at once,
+# and uses jq to format the output. It is incredibly faster than a while loop.
 process_packages() {
-    local type="$1"       # "formulae" o "casks"
-    local file="$2"       # File contenente i nomi dei pacchetti
-    local title="$3"      # Titolo da stampare
-    local jq_query="$4"   # Query jq per formattare l'output
+    local type="$1"       # "formulae" or "casks"
+    local file="$2"       # File containing package names
+    local title="$3"      # Title to print
+    local jq_query="$4"   # jq query to format output
 
     printf "\n${CYAN}📊 Processing ${title}...${RESET}\n"
     if [[ -s "$file" ]]; then
         printf "\n${BRIGHT_GREEN}${title}:${RESET}\n"
-        # Usiamo xargs per passare tutti i nomi a brew info in un solo comando
+        # Use xargs to pass all names to brew info in a single command
         cat "$file" | xargs brew info --json=v2 2>/dev/null | jq -r "$jq_query"
     else
         printf "  ${GREEN}No packages available.${RESET}\n"
     fi
 }
 
-# Query JQ per formattare l'output di Formulae e Casks
+# JQ queries to format Formulae and Casks output
 JQ_FORMULAE_QUERY='.formulae[] | "  - \(.name):\n      Homepage: \(.homepage // "Unable to retrieve homepage")\n      Description: \(.desc // "Unable to retrieve description")"'
 JQ_CASKS_QUERY='.casks[] | "  - \(.token):\n      Homepage: \(.homepage // "Unable to retrieve homepage")\n      Description: \(.desc // "Unable to retrieve description")"'
 
@@ -119,7 +119,7 @@ process_packages "formulae" "$TEMP_DIR/outdated_formulae.txt" "📦 Updated Form
 process_packages "casks" "$TEMP_DIR/outdated_casks.txt" "📦 Updated Casks" "$JQ_CASKS_QUERY"
 
 # Step 8 & 9: Process new packages (Bulk)
-# Puliamo i cask nuovi da eventuali tap per sicurezza prima di passarli a brew info
+# Clean new casks from any taps for safety before passing them to brew info
 if [[ -s "$TEMP_DIR/new_casks_from_update.txt" ]]; then
     sed -i '' 's/.*:://' "$TEMP_DIR/new_casks_from_update.txt"
 fi
