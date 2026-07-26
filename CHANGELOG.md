@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [2.0.0] - 2026-07-26
+
+### Added
+- **Interactive HTML Dashboard:** Added `generate_landing_page` function which automatically builds and opens a modern HTML dashboard (`/tmp/brew-update-landing.html`) in default browser.
+  - Real-time search filter by package name or description.
+  - Category filtering tabs (All, Outdated Formulae/Casks, New Formulae/Casks).
+  - Version transition badges (`old → new`) for outdated packages.
+  - Direct links to Homepage and automatically generated GitHub Release/Changelog links.
+  - One-click copy buttons for `brew upgrade` / `brew install` commands.
+- **Command-line Flags:**
+  - `-y`, `--yes`: Automatically perform `brew upgrade` without prompting.
+  - `-h`, `--help`: Display usage information.
+- **Visual Progress:** Added interactive visual spinner animation during `brew update`.
+- **Version 2 Entry Script:** Created `brew_upgrade_tracker_v2.sh` with updated architecture and embedded interactive UI dashboard.
+
+### Changed
+- **Log Management:** Log files are now automatically cleaned up on exit if no errors were recorded during script execution.
+- **Bulk JSON Handling:** Streamlined single-pass bulk metadata aggregation using `jq` and `brew info --json=v2`.
+
 ## [1.1.0] - 2026-05-27
 
 ### Added
