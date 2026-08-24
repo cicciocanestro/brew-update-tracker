@@ -75,15 +75,37 @@ brew list --formula > "$TEMP_DIR/formulae_after.txt"
 brew list --cask > "$TEMP_DIR/casks_after.txt"
 
 # Step 4: Extract "New Formulae" and "New Casks" from brew update output
-# brew update announces new packages added to taps — parse them directly
-# Uses awk flags to collect lines between section headers
-awk 'p{print} /^==> New Formulae$/{p=1; next} /^==> [a-zA-Z]/{p=0}' "$TEMP_DIR/brew_update_output.txt" \
-    | sed '/^==>/d; /^$/d; s/:.*//' \
-    > "$TEMP_DIR/new_formulae.txt"
+clean_update_output="$TEMP_DIR/brew_update_clean.txt"
+if command -v perl &>/dev/null; then
+    perl -pe 's/\e\[[0-9;]*[a-zA-Z]//g; s/\\033\[[0-9;]*[a-zA-Z]//g; s/\r//g' "$TEMP_DIR/brew_update_output.txt" > "$clean_update_output" 2>/dev/null
+else
+    sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\r//g' "$TEMP_DIR/brew_update_output.txt" > "$clean_update_output" 2>/dev/null || cp "$TEMP_DIR/brew_update_output.txt" "$clean_update_output"
+fi
 
-awk 'p{print} /^==> New Casks$/{p=1; next} /^==> [a-zA-Z]/{p=0}' "$TEMP_DIR/brew_update_output.txt" \
-    | sed '/^==>/d; /^$/d; s/:.*//' \
-    > "$TEMP_DIR/new_casks.txt"
+extract_new_packages() {
+    local section_title="$1"
+    local input_file="$2"
+
+    awk -v title="$section_title" '
+        BEGIN { p = 0 }
+        index($0, title) > 0 { p = 1; next }
+        p && /^==>/ {
+            if ($0 ~ /==>[[:space:]]*(New Formulae|New Casks|Updated Formulae|Updated Casks|Outdated|Deleted|Renamed)/) {
+                p = 0
+            }
+            next
+        }
+        p { print }
+    ' "$input_file" \
+    | sed -e 's/([^)]*)//g' -e 's/:.*//' \
+    | tr -s '[:space:]' '\n' \
+    | sed -e 's#^.*/##' \
+    | grep -E '^[a-zA-Z0-9@+._-]+$' \
+    | sort -u
+}
+
+extract_new_packages "New Formulae" "$clean_update_output" > "$TEMP_DIR/new_formulae.txt"
+extract_new_packages "New Casks" "$clean_update_output" > "$TEMP_DIR/new_casks.txt"
 
 # Step 5: Find outdated packages using JSON
 printf '\n%b🔍 Finding outdated packages...%b\n' "$CYAN" "$RESET"

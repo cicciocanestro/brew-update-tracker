@@ -69,25 +69,66 @@ printf '%b============================%b\n' "$BRIGHT_GREEN" "$RESET"
 
 # Step 1: Run brew update and capture output
 printf '\n%b🔄 Updating Homebrew...%b\n' "$CYAN" "$RESET"
+# IMPORTANT: capture stderr too (2>&1). Since Homebrew 4.1+ the whole update
+# report ("==> New Formulae", "==> New Casks", ...) is written to STDERR when
+# stdout is not a TTY (see cmd/update-report.rb), so parsing stdout alone would
+# never find new packages.
 (
-    brew update > "$TEMP_DIR/brew_update_output.txt" 2>>"$LOG_FILE" &
+    HOMEBREW_NO_COLOR=1 HOMEBREW_NO_EMOJI=1 brew update > "$TEMP_DIR/brew_update_output.txt" 2>&1 &
     pid=$!
     while kill -0 "$pid" 2>/dev/null; do
         printf '.'
         sleep 0.5
     done
-    printf '\n'
+    wait "$pid"
 ) 2>/dev/null
+update_exit=$?
+printf '\n'
+[[ $update_exit -ne 0 ]] && log_error "brew update failed (exit code $update_exit); new packages may be incomplete"
 < "$TEMP_DIR/brew_update_output.txt" cat
 
 # Step 2: Extract "New Formulae" and "New Casks" from update output
-awk 'p{print} /^==> New Formulae$/{p=1; next} /^==> [a-zA-Z]/{p=0}' "$TEMP_DIR/brew_update_output.txt" \
-    | sed '/^==>/d; /^$/d; s/:.*//' \
-    > "$TEMP_DIR/new_formulae.txt"
+clean_update_output="$TEMP_DIR/brew_update_clean.txt"
+tr -d '\r' < "$TEMP_DIR/brew_update_output.txt" > "$clean_update_output" 2>/dev/null || cp "$TEMP_DIR/brew_update_output.txt" "$clean_update_output"
 
-awk 'p{print} /^==> New Casks$/{p=1; next} /^==> [a-zA-Z]/{p=0}' "$TEMP_DIR/brew_update_output.txt" \
-    | sed '/^==>/d; /^$/d; s/:.*//' \
-    > "$TEMP_DIR/new_casks.txt"
+extract_new_packages() {
+    local section_title="$1"
+    local input_file="$2"
+
+    awk -v title="$(echo "$section_title" | tr '[:upper:]' '[:lower:]')" '
+        BEGIN { p = 0 }
+        # Only an actual "==> New Formulae"-style header starts the section
+        # (a package line whose description merely mentions the title must not)
+        p == 0 && tolower($0) ~ "^==>[[:space:]]*" title "[[:space:]]*$" { p = 1; next }
+        p && /^==>/ {
+            if (tolower($0) ~ /==>[[:space:]]*(new formulae|new casks|updated formulae|updated casks|outdated|deleted|renamed)/) {
+                p = 0
+            }
+            next
+        }
+        p { 
+            # Remove anything inside parenthesis
+            gsub(/\([^)]*\)/, "")
+            # Remove anything after a colon (descriptions)
+            sub(/:.*/, "")
+            # Split by whitespace
+            n = split($0, arr, /[[:space:]]+/)
+            for (i = 1; i <= n; i++) {
+                pkg = arr[i]
+                if (pkg != "") {
+                    # Remove tap path if present (e.g., homebrew/core/pkg -> pkg)
+                    sub(/^.*\//, "", pkg)
+                    if (pkg ~ /^[a-zA-Z0-9@+._-]+$/) {
+                        print pkg
+                    }
+                }
+            }
+        }
+    ' "$input_file" | sort -u
+}
+
+extract_new_packages "New Formulae" "$clean_update_output" > "$TEMP_DIR/new_formulae.txt"
+extract_new_packages "New Casks" "$clean_update_output" > "$TEMP_DIR/new_casks.txt"
 
 # Step 3: Find outdated packages using JSON
 printf '\n%b🔍 Finding outdated packages...%b\n' "$CYAN" "$RESET"
@@ -128,7 +169,7 @@ process_packages "$TEMP_DIR/new_casks.txt" "🆕 New Casks" "$JQ_CASKS_QUERY"
 get_names_json() {
     local file="$1"
     if [[ -s "$file" ]]; then
-        jq -R -s 'split("\n") | map(select(length > 0))' "$file" 2>/dev/null
+        tr -s '[:space:]' '\n' < "$file" | grep -v '^$' | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null
     else
         echo "[]"
     fi
@@ -137,15 +178,18 @@ get_names_json() {
 # Step 4: Generate Interactive Dashboard HTML
 generate_landing_page() {
     local landing_file="${TMP_BASE}/brew-update-landing.html"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     printf '\n%b🌐 Generating modern interactive dashboard...%b\n' "$CYAN" "$RESET"
 
-    # Package lists for bulk fetch
+    # ------------------------------------------------------------------
+    # Data assembly (bulk metadata fetch, robust JSON payload)
+    # ------------------------------------------------------------------
     local f_list="$TEMP_DIR/all_formulae.txt"
     local c_list="$TEMP_DIR/all_casks.txt"
-    cat "$TEMP_DIR/outdated_formulae.txt" "$TEMP_DIR/new_formulae.txt" 2>/dev/null | sort -u | grep -v '^$' > "$f_list"
-    cat "$TEMP_DIR/outdated_casks.txt" "$TEMP_DIR/new_casks.txt" 2>/dev/null | sort -u | grep -v '^$' > "$c_list"
+    cat "$TEMP_DIR/outdated_formulae.txt" "$TEMP_DIR/new_formulae.txt" 2>/dev/null | tr -s '[:space:]' '\n' | sort -u | grep -v '^$' > "$f_list"
+    cat "$TEMP_DIR/outdated_casks.txt" "$TEMP_DIR/new_casks.txt" 2>/dev/null | tr -s '[:space:]' '\n' | sort -u | grep -v '^$' > "$c_list"
 
     local formulae_json="[]"
     local casks_json="[]"
@@ -171,7 +215,7 @@ generate_landing_page() {
     local out_f_names=$(get_names_json "$TEMP_DIR/outdated_formulae.txt")
     local out_c_names=$(get_names_json "$TEMP_DIR/outdated_casks.txt")
 
-    # Assemble unified JSON payload
+    # Assemble the unified JSON payload (same schema as before)
     local json_data=""
     json_data=$(jq -c -n \
         --arg timestamp "$timestamp" \
