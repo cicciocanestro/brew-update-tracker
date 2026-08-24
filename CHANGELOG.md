@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [2.1.0] - 2026-08-10
+
+### Fixed
+- **New packages detection restored:** `brew update` output is now captured with `2>&1`. Since Homebrew 4.1+, when stdout is not a TTY the whole update report (`==> New Formulae`, `==> New Casks`, …) is written to **stderr**, so redirecting stderr to the log file made the parser find zero new packages. A failed `brew update` is now detected and logged too.
+- Section headers in the package extractor are matched strictly (`==> New Formulae`), so descriptions merely mentioning the section title can no longer swallow or leak package entries.
+
+### Changed
+- **Dashboard redesign ("Aurora Glass"):** fully rebuilt interactive landing page in `generate_landing_page`.
+  - Animated aurora background with glassmorphism surfaces and a sticky glass top bar.
+  - Animated count-up metric cards and an SVG donut chart with per-category breakdown and legend.
+  - Filter pills with live counts, search box with `/` shortcut and `Esc` to clear.
+  - Package cards with gradient avatars, animated version transition (`old ⟶ new`), staggered entrance animations.
+  - "Copy all commands" bulk action, robust clipboard fallback for `file://`, and toast notifications.
+  - Dedicated empty states (celebration when up-to-date, hints when filters match nothing).
+  - Honors `prefers-reduced-motion` and is fully responsive.
+  - HTML emission rewritten with quoted heredocs (no more shell-escaping of backticks/`${}` inside the JS).
+  - Compact overview: slimmer metric cards and donut panel with grid legend; with zero packages the donut/controls are hidden and a floating celebration panel is shown instead of empty widget space.
+
 ## [2.0.0] - 2026-07-26
 
 ### Added
