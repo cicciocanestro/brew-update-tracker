@@ -6,7 +6,22 @@ A smart Homebrew helper script that enhances the update and upgrade process by p
 
 ## 📋 Description
 
-`brew_upgrade_tracker.sh` is a ZSH script that wraps around Homebrew's update and upgrade functionality, providing additional insights and control. It tracks installed packages before and after running `brew update`, shows detailed information about available updates (including package homepages and descriptions), and allows you to decide whether to proceed with the upgrade process.
+This repository contains a ZSH script that wraps around Homebrew's update and upgrade functionality, providing additional insights and control. It tracks installed packages before and after running `brew update`, shows detailed information about available updates (including package homepages and descriptions), and lets you decide whether to proceed with the upgrade process.
+
+The script ships in **two versions** — pick the one that fits your workflow (see below).
+
+## 📂 Two Versions
+
+| | **`brew_upgrade_tracker.sh`** (v1) | **`brew_upgrade_tracker_v2.sh`** (v2) |
+|---|---|---|
+| **Output** | Terminal CLI only | Terminal CLI **+** interactive HTML dashboard |
+| **Package metadata** | Standard `brew info` lookups | Fast bulk fetch via `brew info --json=v2` + `jq` |
+| **Command-line flags** | None | `-y`/`--yes`, `-h`/`--help` |
+| **Visual feedback** | Progress dots | Progress spinner + animated glassmorphism dashboard |
+| **Best for** | Minimal/headless use, plain terminal output, no browser | Daily driver: full dashboard with search, filters, one-click copy |
+| **Requires** | Homebrew + `jq` | Homebrew + `jq` + a default web browser |
+
+> **Recommendation:** use **v2** for the full experience. Use **v1** if you prefer a lightweight script that prints results only in the terminal and never opens a browser.
 
 ## 🔧 Prerequisites
 
