@@ -236,788 +236,842 @@ generate_landing_page() {
             outdated_formulae: $out_f,
             outdated_casks: $out_c
         }' 2>/dev/null)
+    [[ -z "$json_data" ]] && json_data='{}'
 
-    # Counts
-    local new_f_count=$(jq 'length' <<< "$new_f_names")
-    local new_c_count=$(jq 'length' <<< "$new_c_names")
-    local out_f_count=$(jq 'length' <<< "$out_f_names")
-    local out_c_count=$(jq 'length' <<< "$out_c_names")
-
-    local updated_total=$((out_f_count + out_c_count))
-    local new_total=$((new_f_count + new_c_count))
-
-    cat > "$landing_file" << HTMLEOF
+    # ------------------------------------------------------------------
+    # Emit the dashboard: static skeleton + inline JSON + application JS
+    # (quoted heredocs so no shell escaping is needed inside CSS/JS)
+    # ------------------------------------------------------------------
+    {
+        cat << 'BREW_HTML_HEAD'
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🍺 Brew Update Tracker</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#05060b">
+<title>🍺 Brew Update Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        :root {
-            --bg: #090a0f;
-            --surface: rgba(18, 20, 29, 0.75);
-            --surface-hover: rgba(26, 29, 43, 0.85);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(99, 102, 241, 0.35);
-            --text: #f1f5f9;
-            --text-muted: #94a3b8;
-            --accent: #6366f1;
-            --accent-light: #818cf8;
-            --cyan: #06b6d4;
-            --emerald: #10b981;
-            --amber: #f59e0b;
-            --rose: #f43f5e;
-            --purple: #a855f7;
-            --radius-lg: 16px;
-            --radius-md: 10px;
-            --radius-sm: 6px;
-        }
+    :root {
+        --bg: #05060b;
+        --surface: rgba(17, 19, 28, 0.62);
+        --surface-strong: rgba(22, 25, 36, 0.85);
+        --border: rgba(255, 255, 255, 0.08);
+        --border-hi: rgba(129, 140, 248, 0.45);
+        --text: #eef2ff;
+        --muted: #8b93ab;
+        --indigo: #818cf8;
+        --cyan: #22d3ee;
+        --emerald: #34d399;
+        --amber: #fbbf24;
+        --rose: #fb7185;
+        --violet: #a78bfa;
+        --r-lg: 20px;
+        --r-md: 14px;
+        --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
 
-        body {
-            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: var(--bg);
-            background-image:
-                radial-gradient(circle at 50% -10%, rgba(99, 102, 241, 0.15), transparent 45%),
-                radial-gradient(circle at 90% 60%, rgba(6, 182, 212, 0.08), transparent 40%),
-                radial-gradient(circle at 10% 90%, rgba(168, 85, 247, 0.08), transparent 40%);
-            background-attachment: fixed;
-            color: var(--text);
-            line-height: 1.6;
-            min-height: 100vh;
-            padding-bottom: 60px;
-            -webkit-font-smoothing: antialiased;
-        }
+    html { scroll-behavior: smooth; }
 
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 40px 20px;
-        }
+    body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+    }
 
-        /* Header */
-        header {
-            text-align: center;
-            margin-bottom: 36px;
-            animation: fadeInDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-        }
+    ::selection { background: rgba(99, 102, 241, 0.45); }
+    :focus-visible { outline: 2px solid rgba(129, 140, 248, 0.75); outline-offset: 2px; }
+    ::-webkit-scrollbar { width: 10px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+    ::-webkit-scrollbar-track { background: transparent; }
 
-        @keyframes fadeInDown {
-            from { opacity: 0; transform: translateY(-16px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+    /* ---------- ambient aurora background ---------- */
+    .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(90px);
+        opacity: 0.5;
+        z-index: -1;
+        pointer-events: none;
+        will-change: transform;
+    }
+    .orb-a { width: 520px; height: 520px; top: -160px; left: -120px; background: radial-gradient(circle at 30% 30%, rgba(99,102,241,0.55), transparent 65%); animation: drift 26s ease-in-out infinite alternate; }
+    .orb-b { width: 460px; height: 460px; top: 30%; right: -160px; background: radial-gradient(circle at 60% 40%, rgba(34,211,238,0.38), transparent 65%); animation: drift 32s ease-in-out infinite alternate-reverse; }
+    .orb-c { width: 420px; height: 420px; bottom: -180px; left: 28%; background: radial-gradient(circle at 50% 50%, rgba(167,139,250,0.35), transparent 65%); animation: drift 38s ease-in-out infinite alternate; }
+    @keyframes drift {
+        0%   { transform: translate(0, 0) scale(1); }
+        50%  { transform: translate(40px, -30px) scale(1.08); }
+        100% { transform: translate(-30px, 30px) scale(0.96); }
+    }
 
-        .logo-wrapper {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 72px;
-            height: 72px;
-            font-size: 2.2rem;
-            border-radius: 22px;
-            background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(6, 182, 212, 0.1));
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            box-shadow: 0 8px 24px -6px rgba(99, 102, 241, 0.3);
-            margin-bottom: 16px;
-            backdrop-filter: blur(12px);
-        }
+    /* ---------- sticky glass top bar ---------- */
+    .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 14px clamp(16px, 4vw, 36px);
+        background: rgba(8, 10, 16, 0.82);
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        border-bottom: 1px solid rgba(129, 140, 248, 0.22);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-logo {
+        width: 42px; height: 42px;
+        display: grid; place-items: center;
+        font-size: 1.35rem;
+        border-radius: 13px;
+        background: linear-gradient(135deg, rgba(99,102,241,0.35), rgba(34,211,238,0.15));
+        border: 1px solid rgba(129, 140, 248, 0.35);
+        box-shadow: 0 6px 20px -6px rgba(99, 102, 241, 0.5);
+    }
+    .brand-name { display: block; font-weight: 800; font-size: 1rem; letter-spacing: -0.2px; }
+    .brand-sub { display: block; font-size: 0.68rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 1.4px; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .chip {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        font-size: 0.76rem; color: var(--muted); font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--emerald);
+        box-shadow: 0 0 10px var(--emerald);
+        animation: pulse 2.2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
+    .btn-ghost {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(129, 140, 248, 0.35);
+        background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(34,211,238,0.10));
+        color: var(--text);
+        font: inherit; font-size: 0.8rem; font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .btn-ghost:hover { border-color: var(--border-hi); box-shadow: 0 8px 24px -8px rgba(99, 102, 241, 0.55); transform: translateY(-1px); }
+    .btn-ghost:active { transform: translateY(0); }
 
-        header h1 {
-            font-size: 2.4rem;
-            font-weight: 800;
-            letter-spacing: -0.8px;
-            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
-        }
+    /* ---------- layout ---------- */
+    .container { max-width: 1060px; margin: 0 auto; padding: clamp(24px, 4vw, 44px) clamp(16px, 4vw, 32px) 80px; }
 
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 14px;
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border);
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            font-weight: 500;
-        }
+    .hero { text-align: center; margin-bottom: 26px; animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    .hero-title {
+        font-size: clamp(2rem, 5vw, 2.9rem);
+        font-weight: 800;
+        letter-spacing: -1.5px;
+        line-height: 1.08;
+    }
+    .grad {
+        background: linear-gradient(92deg, #818cf8 0%, #22d3ee 55%, #34d399 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+    }
+    .hero-sub { margin-top: 10px; color: var(--muted); font-size: 1rem; font-weight: 500; }
+    .hero-sub b { color: var(--text); font-weight: 700; }
+    @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 
-        .pulse-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: var(--emerald);
-            box-shadow: 0 0 10px var(--emerald);
-            animation: pulse 2s infinite;
-        }
+    /* ---------- metric cards ---------- */
+    .stats-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin-bottom: 14px;
+        animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+    }
+    .stat-card {
+        position: relative;
+        overflow: hidden;
+        text-align: center;
+        background: var(--surface);
+        backdrop-filter: blur(20px) saturate(150%);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        padding: 16px 18px;
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .stat-card:hover { transform: translateY(-3px); border-color: var(--border-hi); box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.6); }
+    .stat-card::after {
+        content: '';
+        position: absolute;
+        inset: auto -30% -60% -30%;
+        height: 70%;
+        background: radial-gradient(closest-side, var(--glow, rgba(99,102,241,0.25)), transparent);
+        opacity: 0.7;
+        pointer-events: none;
+    }
+    .stat-icon { font-size: 1.15rem; margin-bottom: 8px; }
+    .stat-value { font-size: 2rem; font-weight: 800; line-height: 1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; }
+    .stat-label { margin-top: 6px; font-size: 0.66rem; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+    .c-amber { --glow: rgba(251, 191, 36, 0.28); } .c-amber .stat-value { color: var(--amber); }
+    .c-cyan  { --glow: rgba(34, 211, 238, 0.25); } .c-cyan  .stat-value { color: var(--cyan); }
+    .c-indigo{ --glow: rgba(129, 140, 248, 0.28); } .c-indigo .stat-value { color: var(--indigo); }
+    .c-violet{ --glow: rgba(167, 139, 250, 0.28); } .c-violet .stat-value { color: var(--violet); }
 
-        @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(0.85); }
-            100% { opacity: 1; transform: scale(1); }
-        }
+    /* ---------- donut breakdown card ---------- */
+    .donut-card {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        flex-wrap: wrap;
+        margin-bottom: 26px;
+        background: var(--surface);
+        backdrop-filter: blur(20px) saturate(150%);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        padding: 16px 24px;
+    }
+    .donut-wrap { position: relative; width: 108px; height: 108px; flex: none; }
+    .donut-wrap svg { transform: rotate(-90deg); }
+    .donut-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+    .donut-total { font-size: 1.55rem; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+    .donut-cap { font-size: 0.58rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+    .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 26px; flex: 1; min-width: 280px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+    .legend-item b { color: var(--text); font-weight: 800; }
+    .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
-        /* Metrics Bar */
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-            gap: 16px;
-            margin-bottom: 32px;
-            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
-        }
+    /* ---------- search + filter pills ---------- */
+    .controls {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 22px;
+        animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
+    }
+    .search-box { position: relative; flex: 1; min-width: 240px; }
+    .search-box .s-ico { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); font-size: 0.85rem; opacity: 0.7; pointer-events: none; }
+    .search-box input {
+        width: 100%;
+        padding: 12px 44px 12px 42px;
+        border-radius: 999px;
+        background: rgba(10, 12, 20, 0.6);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.92rem;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    .search-box input::placeholder { color: #5b6379; }
+    .search-box input:focus { border-color: var(--border-hi); box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18); background: rgba(10, 12, 20, 0.85); }
+    .search-box kbd {
+        position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+        padding: 2px 8px; border-radius: 6px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.05);
+        font-family: var(--mono); font-size: 0.7rem; color: var(--muted);
+        pointer-events: none;
+    }
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill {
+        padding: 9px 16px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font: inherit; font-size: 0.82rem; font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+    }
+    .pill b { font-weight: 800; margin-left: 3px; font-variant-numeric: tabular-nums; }
+    .pill:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.18); }
+    .pill.active {
+        color: #fff;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.9), rgba(34, 211, 238, 0.75));
+        border-color: transparent;
+        box-shadow: 0 8px 22px -8px rgba(99, 102, 241, 0.65);
+    }
 
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(16px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+    /* ---------- package cards ---------- */
+    .feed { display: flex; flex-direction: column; gap: 14px; }
+    .card {
+        position: relative;
+        background: var(--surface);
+        backdrop-filter: blur(20px) saturate(150%);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        padding: 20px 22px;
+        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+        animation: rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .card:hover { transform: translateY(-3px); border-color: var(--border-hi); box-shadow: 0 22px 46px -20px rgba(0, 0, 0, 0.65); }
+    .card::before {
+        content: '';
+        position: absolute; inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(120deg, rgba(129, 140, 248, 0.09), transparent 40%);
+        opacity: 0;
+        transition: opacity 0.25s ease;
+        pointer-events: none;
+    }
+    .card:hover::before { opacity: 1; }
+    .card-main { display: flex; gap: 16px; position: relative; }
+    .avatar {
+        flex: none;
+        width: 46px; height: 46px;
+        border-radius: 14px;
+        display: grid; place-items: center;
+        font-weight: 800; font-size: 1.15rem;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 18px -8px rgba(0, 0, 0, 0.5);
+    }
+    .g0 { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+    .g1 { background: linear-gradient(135deg, #06b6d4, #3b82f6); }
+    .g2 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+    .g3 { background: linear-gradient(135deg, #10b981, #06b6d4); }
+    .g4 { background: linear-gradient(135deg, #ec4899, #8b5cf6); }
+    .g5 { background: linear-gradient(135deg, #f43f5e, #f97316); }
+    .card-body { flex: 1; min-width: 0; }
+    .card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .pkg-name { font-size: 1.06rem; font-weight: 800; color: var(--text); text-decoration: none; letter-spacing: -0.2px; transition: color 0.2s ease; }
+    a.pkg-name:hover { color: var(--indigo); }
+    .badge {
+        font-size: 0.62rem; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;
+        padding: 3px 9px; border-radius: 999px; border: 1px solid transparent;
+    }
+    .b-formula { color: var(--indigo); background: rgba(99, 102, 241, 0.13); border-color: rgba(99, 102, 241, 0.3); }
+    .b-cask    { color: var(--violet);  background: rgba(167, 139, 250, 0.13); border-color: rgba(167, 139, 250, 0.3); }
+    .b-new     { color: var(--cyan);    background: rgba(34, 211, 238, 0.12);  border-color: rgba(34, 211, 238, 0.3); }
+    .b-update  { color: var(--amber);   background: rgba(251, 191, 36, 0.12);  border-color: rgba(251, 191, 36, 0.3); }
+    .ver {
+        display: inline-flex; align-items: center; gap: 9px;
+        margin: 7px 0 2px;
+        padding: 5px 13px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.32);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        font-family: var(--mono); font-size: 0.76rem;
+        width: max-content; max-width: 100%;
+    }
+    .ver-old { color: var(--rose); }
+    .ver-arrow { color: var(--muted); animation: nudge 1.6s ease-in-out infinite; }
+    @keyframes nudge { 0%, 100% { transform: translateX(0); opacity: 0.6; } 50% { transform: translateX(4px); opacity: 1; } }
+    .ver-new { color: var(--emerald); font-weight: 700; }
+    .pkg-desc {
+        color: var(--muted); font-size: 0.9rem;
+        margin: 6px 0 12px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .card-actions {
+        display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .act {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font: inherit; font-size: 0.78rem; font-weight: 700;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+    .act code { font-family: var(--mono); font-size: 0.74rem; color: inherit; }
+    .act:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
+    .act-copy:hover { color: var(--cyan); border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.09); }
+    .act-changelog { color: var(--amber); }
+    .act-changelog:hover { color: #fde047; border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.09); }
+    .act-home:hover { color: var(--indigo); border-color: rgba(129, 140, 248, 0.4); background: rgba(99, 102, 241, 0.09); }
 
-        .metric-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 20px 24px;
-            backdrop-filter: blur(16px);
-            transition: all 0.25s ease;
-            position: relative;
-            overflow: hidden;
-        }
+    /* ---------- empty states ---------- */
+    .empty {
+        text-align: center;
+        padding: 64px 24px;
+        border: 1px dashed rgba(255, 255, 255, 0.14);
+        border-radius: var(--r-lg);
+        background: rgba(255, 255, 255, 0.02);
+        animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .empty .e-ico { font-size: 3rem; display: block; margin-bottom: 14px; }
+    .empty h3 { font-size: 1.25rem; font-weight: 800; margin-bottom: 6px; }
+    .empty p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; }
+    .empty.party {
+        border-style: solid;
+        border-color: rgba(52, 211, 153, 0.28);
+        background: linear-gradient(180deg, rgba(16, 185, 129, 0.08), rgba(255, 255, 255, 0.015));
+        box-shadow: 0 0 70px -24px rgba(16, 185, 129, 0.35);
+    }
+    .empty.party .e-ico {
+        font-size: 3.4rem;
+        filter: drop-shadow(0 8px 22px rgba(52, 211, 153, 0.55));
+        animation: floaty 3s ease-in-out infinite;
+    }
+    @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 
-        .metric-card:hover {
-            transform: translateY(-3px);
-            border-color: var(--border-hover);
-            box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.4);
-        }
+    /* ---------- footer + toast ---------- */
+    .foot { margin-top: 52px; text-align: center; color: #5b6379; font-size: 0.78rem; font-weight: 600; }
+    .toast {
+        position: fixed; left: 50%; bottom: 28px;
+        transform: translate(-50%, 16px);
+        display: flex; align-items: center; gap: 9px;
+        padding: 11px 20px;
+        border-radius: 999px;
+        background: rgba(15, 18, 30, 0.92);
+        border: 1px solid var(--border-hi);
+        box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.7);
+        font-size: 0.86rem; font-weight: 700;
+        opacity: 0;
+        pointer-events: none;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 100;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        max-width: calc(100vw - 32px);
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-        .metric-card .icon-box {
-            font-size: 1.5rem;
-            margin-bottom: 12px;
-        }
-
-        .metric-card .number {
-            font-size: 2.2rem;
-            font-weight: 800;
-            line-height: 1;
-            margin-bottom: 6px;
-            letter-spacing: -1px;
-        }
-
-        .metric-card .label {
-            font-size: 0.78rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--text-muted);
-        }
-
-        .val-amber { color: var(--amber); }
-        .val-cyan { color: var(--cyan); }
-        .val-indigo { color: var(--accent-light); }
-        .val-purple { color: var(--purple); }
-
-        /* Controls Section (Search & Filter Tabs) */
-        .controls-wrapper {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 16px 20px;
-            margin-bottom: 28px;
-            backdrop-filter: blur(16px);
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
-        }
-
-        @media (min-width: 640px) {
-            .controls-wrapper {
-                flex-direction: row;
-                align-items: center;
-                justify-content: space-between;
-            }
-        }
-
-        .search-box {
-            position: relative;
-            flex: 1;
-            max-width: 380px;
-        }
-
-        .search-box input {
-            width: 100%;
-            padding: 10px 16px 10px 40px;
-            border-radius: var(--radius-md);
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border);
-            color: var(--text);
-            font-family: inherit;
-            font-size: 0.9rem;
-            outline: none;
-            transition: all 0.2s ease;
-        }
-
-        .search-box input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
-            background: rgba(0, 0, 0, 0.5);
-        }
-
-        .search-icon {
-            position: absolute;
-            left: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            pointer-events: none;
-        }
-
-        .filter-tabs {
-            display: flex;
-            gap: 6px;
-            overflow-x: auto;
-            padding-bottom: 4px;
-        }
-
-        @media (min-width: 640px) {
-            .filter-tabs { padding-bottom: 0; }
-        }
-
-        .tab-btn {
-            padding: 8px 14px;
-            border-radius: var(--radius-md);
-            border: 1px solid transparent;
-            background: transparent;
-            color: var(--text-muted);
-            font-family: inherit;
-            font-size: 0.82rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            white-space: nowrap;
-        }
-
-        .tab-btn:hover {
-            color: var(--text);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .tab-btn.active {
-            color: var(--text);
-            background: rgba(99, 102, 241, 0.18);
-            border-color: rgba(99, 102, 241, 0.35);
-        }
-
-        /* Package Feed */
-        .package-feed {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
-        }
-
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 20px 24px;
-            backdrop-filter: blur(16px);
-            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-            position: relative;
-        }
-
-        .card:hover {
-            transform: translateY(-2px);
-            border-color: var(--border-hover);
-            box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.4);
-        }
-
-        .card-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-        }
-
-        .card-title-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .card-title {
-            font-size: 1.15rem;
-            font-weight: 700;
-            color: var(--text);
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-
-        .card-title:hover {
-            color: var(--accent-light);
-        }
-
-        .badge-list {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .badge {
-            font-size: 0.72rem;
-            font-weight: 700;
-            padding: 3px 10px;
-            border-radius: 20px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .badge-formula {
-            background: rgba(99, 102, 241, 0.12);
-            color: var(--accent-light);
-            border: 1px solid rgba(99, 102, 241, 0.25);
-        }
-
-        .badge-cask {
-            background: rgba(168, 85, 247, 0.12);
-            color: var(--purple);
-            border: 1px solid rgba(168, 85, 247, 0.25);
-        }
-
-        .badge-outdated {
-            background: rgba(245, 158, 11, 0.12);
-            color: var(--amber);
-            border: 1px solid rgba(245, 158, 11, 0.25);
-        }
-
-        .badge-new {
-            background: rgba(6, 182, 212, 0.12);
-            color: var(--cyan);
-            border: 1px solid rgba(6, 182, 212, 0.25);
-        }
-
-        /* Version Transition Bar */
-        .version-bar {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 4px 12px;
-            border-radius: var(--radius-md);
-            margin-bottom: 10px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-        }
-
-        .ver-old {
-            color: var(--rose);
-            background: rgba(244, 63, 94, 0.12);
-            padding: 2px 8px;
-            border-radius: var(--radius-sm);
-        }
-
-        .ver-arrow {
-            color: var(--text-muted);
-            font-size: 0.75rem;
-        }
-
-        .ver-new {
-            color: var(--emerald);
-            background: rgba(16, 185, 129, 0.12);
-            padding: 2px 8px;
-            border-radius: var(--radius-sm);
-        }
-
-        .card-desc {
-            color: var(--text-muted);
-            font-size: 0.92rem;
-            line-height: 1.5;
-            margin-bottom: 14px;
-        }
-
-        .card-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            padding-top: 10px;
-            border-top: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        .action-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            border-radius: var(--radius-md);
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-decoration: none;
-            color: var(--text-muted);
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .action-btn:hover {
-            color: var(--text);
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
-        .action-btn.btn-copy:hover {
-            color: var(--accent-light);
-            background: rgba(99, 102, 241, 0.12);
-            border-color: rgba(99, 102, 241, 0.3);
-        }
-
-        .action-btn.btn-changelog {
-            color: var(--amber);
-            background: rgba(245, 158, 11, 0.08);
-            border-color: rgba(245, 158, 11, 0.2);
-        }
-
-        .action-btn.btn-changelog:hover {
-            color: #fde047;
-            background: rgba(245, 158, 11, 0.16);
-            border-color: rgba(245, 158, 11, 0.35);
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 48px 24px;
-            background: var(--surface);
-            border: 1px dashed var(--border);
-            border-radius: var(--radius-lg);
-            color: var(--text-muted);
-        }
-
-        .empty-state .icon {
-            font-size: 2.5rem;
-            margin-bottom: 12px;
-            display: block;
-        }
-
-        /* Toast Notification */
-        .toast {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            background: rgba(15, 23, 42, 0.95);
-            border: 1px solid var(--accent);
-            color: var(--text);
-            padding: 12px 20px;
-            border-radius: var(--radius-md);
-            font-size: 0.88rem;
-            font-weight: 600;
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            z-index: 1000;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            pointer-events: none;
-            backdrop-filter: blur(12px);
-        }
-
-        .toast.show {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        footer {
-            text-align: center;
-            margin-top: 40px;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-    </style>
+    @media (max-width: 640px) {
+        .brand-sub { display: none; }
+        .stats-row { grid-template-columns: repeat(2, 1fr); }
+        .donut-card { justify-content: center; text-align: center; }
+        .legend { justify-content: center; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="logo-wrapper">🍺</div>
-            <h1>Brew Update Tracker</h1>
-            <div class="status-badge">
-                <span class="pulse-dot"></span>
-                <span>Report Generated • ${timestamp}</span>
-            </div>
-        </header>
+<div class="orb orb-a" aria-hidden="true"></div>
+<div class="orb orb-b" aria-hidden="true"></div>
+<div class="orb orb-c" aria-hidden="true"></div>
 
-        <div class="metrics-grid">
-            <div class="metric-card">
-                <div class="icon-box">📦</div>
-                <div class="number val-amber">${updated_total}</div>
-                <div class="label">To Upgrade</div>
-            </div>
-            <div class="metric-card">
-                <div class="icon-box">🆕</div>
-                <div class="number val-cyan">${new_total}</div>
-                <div class="label">New Packages</div>
-            </div>
-            <div class="metric-card">
-                <div class="icon-box">🧪</div>
-                <div class="number val-indigo">$((out_f_count + new_f_count))</div>
-                <div class="label">Formulae</div>
-            </div>
-            <div class="metric-card">
-                <div class="icon-box">🍷</div>
-                <div class="number val-purple">$((out_c_count + new_c_count))</div>
-                <div class="label">Casks</div>
+<header class="topbar">
+    <div class="brand">
+        <div class="brand-logo">🍺</div>
+        <div class="brand-text">
+            <span class="brand-name">Brew Update Tracker</span>
+            <span class="brand-sub">Homebrew Dashboard</span>
+        </div>
+    </div>
+    <div class="topbar-actions">
+        <span class="chip"><span class="dot"></span><span id="chip-time">syncing…</span></span>
+        <button class="btn-ghost" id="copy-all" type="button" title="Copy every upgrade/install command">⧉ Copy all commands</button>
+    </div>
+</header>
+
+<main class="container">
+    <section class="hero">
+        <h1 class="hero-title">What&rsquo;s <span class="grad">brewing?</span></h1>
+        <p class="hero-sub" id="hero-sub">Preparing your report…</p>
+    </section>
+
+    <section class="stats-row">
+        <div class="stat-card c-amber">
+            <div class="stat-icon">📦</div>
+            <div class="stat-value" id="stat-update">0</div>
+            <div class="stat-label">To Upgrade</div>
+        </div>
+        <div class="stat-card c-cyan">
+            <div class="stat-icon">🆕</div>
+            <div class="stat-value" id="stat-new">0</div>
+            <div class="stat-label">New Packages</div>
+        </div>
+        <div class="stat-card c-indigo">
+            <div class="stat-icon">🧪</div>
+            <div class="stat-value" id="stat-formula">0</div>
+            <div class="stat-label">Formulae</div>
+        </div>
+        <div class="stat-card c-violet">
+            <div class="stat-icon">🍷</div>
+            <div class="stat-value" id="stat-cask">0</div>
+            <div class="stat-label">Casks</div>
+        </div>
+    </section>
+
+    <section class="donut-card" id="donut-card">
+        <div class="donut-wrap">
+            <svg width="108" height="108" viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="15"/>
+                <g id="donut-segs"></g>
+            </svg>
+            <div class="donut-center">
+                <div class="donut-total" id="donut-total">0</div>
+                <div class="donut-cap">packages</div>
             </div>
         </div>
+        <div class="legend" id="legend"></div>
+    </section>
 
-        <div class="controls-wrapper">
-            <div class="search-box">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="search-input" placeholder="Filter by package name or description..." />
-            </div>
-            <div class="filter-tabs">
-                <button class="tab-btn active" data-filter="all">All (${$((updated_total + new_total))})</button>
-                <button class="tab-btn" data-filter="outdated">📦 To Upgrade (${updated_total})</button>
-                <button class="tab-btn" data-filter="new">🆕 New (${new_total})</button>
-                <button class="tab-btn" data-filter="formula">🧪 Formulae</button>
-                <button class="tab-btn" data-filter="cask">🍷 Casks</button>
-            </div>
+    <section class="controls" id="controls">
+        <div class="search-box">
+            <span class="s-ico">🔍</span>
+            <input type="text" id="search" placeholder="Search by name or description…" autocomplete="off" spellcheck="false">
+            <kbd>/</kbd>
         </div>
+        <div class="pills" id="pills">
+            <button class="pill active" data-filter="all" type="button">All <b id="cnt-all">0</b></button>
+            <button class="pill" data-filter="outdated" type="button">📦 Upgrade <b id="cnt-outdated">0</b></button>
+            <button class="pill" data-filter="new" type="button">🆕 New <b id="cnt-new">0</b></button>
+            <button class="pill" data-filter="formula" type="button">🧪 Formulae <b id="cnt-formula">0</b></button>
+            <button class="pill" data-filter="cask" type="button">🍷 Casks <b id="cnt-cask">0</b></button>
+        </div>
+    </section>
 
-        <main id="package-feed" class="package-feed">
-            <!-- Dynamic package cards rendered by JS -->
-        </main>
+    <section id="feed" class="feed" aria-live="polite"></section>
 
-        <footer>
-            🍺 Brew Update Tracker v2 • Modern Dashboard Output
-        </footer>
-    </div>
+    <footer class="foot">Generated by Brew Update Tracker v2 · <span id="foot-time"></span></footer>
+</main>
 
-    <div id="toast" class="toast">
-        <span>✨</span>
-        <span class="toast-msg">Copied command!</span>
-    </div>
+<div id="toast" class="toast" role="status">✨ <span id="toast-msg">Done</span></div>
 
-    <script id="brew-data" type="application/json">
-${json_data}
-    </script>
+<script id="brew-data" type="application/json">
+BREW_HTML_HEAD
+        printf '%s\n' "$json_data" | sed 's|</|<\\/|g'
+        cat << 'BREW_HTML_TAIL'
+</script>
+<script>
+(function () {
+    'use strict';
 
-    <script>
-    (function() {
-        const rawData = JSON.parse(document.getElementById('brew-data').textContent || '{}');
-        const packages = [];
+    var byId = function (id) { return document.getElementById(id); };
+    var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-        const formulaeMap = new Map((rawData.formulae || []).map(f => [f.name, f]));
-        const casksMap = new Map((rawData.casks || []).map(c => [c.token, c]));
+    var DATA = (function () {
+        try { return JSON.parse(byId('brew-data').textContent || '{}'); }
+        catch (e) { return {}; }
+    })();
 
-        const outdatedFormulaeMap = new Map(((rawData.outdated && rawData.outdated.formulae) || []).map(f => [f.name, f]));
-        const outdatedCasksMap = new Map(((rawData.outdated && rawData.outdated.casks) || []).map(c => [c.name, c]));
+    function arr(x) { return Array.isArray(x) ? x : []; }
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function changelogUrl(hp) {
+        if (!hp) return null;
+        var m = hp.match(/^https?:\/\/github\.com\/([^\/#?]+)\/([^\/#?]+)/);
+        return m ? 'https://github.com/' + m[1] + '/' + m[2] + '/releases' : null;
+    }
+    function hashCode(s) {
+        var h = 0, i;
+        for (i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
+        return Math.abs(h);
+    }
 
-        function getChangelogUrl(homepage) {
-            if (!homepage) return null;
-            const match = homepage.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)/);
-            if (match) {
-                return \`https://github.com/\${match[1]}/\${match[2]}/releases\`;
-            }
-            return null;
+    /* ---------- build the package list ---------- */
+    var fMap = new Map(), cMap = new Map();
+    arr(DATA.formulae).forEach(function (f) {
+        if (f.name) fMap.set(f.name, f);
+        if (f.full_name) fMap.set(f.full_name, f);
+    });
+    arr(DATA.casks).forEach(function (c) {
+        if (c.token) cMap.set(c.token, c);
+        if (c.full_token) cMap.set(c.full_token, c);
+    });
+    var oF = new Map();
+    arr(DATA.outdated && DATA.outdated.formulae).forEach(function (f) { oF.set(f.name, f); });
+    var oC = new Map();
+    arr(DATA.outdated && DATA.outdated.casks).forEach(function (c) { oC.set(c.name, c); });
+
+    var packages = [];
+    arr(DATA.outdated_formulae).forEach(function (name) {
+        var info = fMap.get(name) || {}, v = oF.get(name) || {};
+        packages.push({
+            name: name, type: 'formula', typeLabel: 'Formula', status: 'update',
+            desc: info.desc || 'No description available.',
+            homepage: info.homepage || '',
+            installed: (v.installed_versions || []).join(', '),
+            current: v.current_version || ''
+        });
+    });
+    arr(DATA.outdated_casks).forEach(function (token) {
+        var info = cMap.get(token) || {}, v = oC.get(token) || {};
+        packages.push({
+            name: token, type: 'cask', typeLabel: 'Cask', status: 'update',
+            desc: info.desc || 'No description available.',
+            homepage: info.homepage || '',
+            installed: (v.installed_versions || []).join(', '),
+            current: v.current_version || ''
+        });
+    });
+    arr(DATA.new_formulae).forEach(function (name) {
+        var info = fMap.get(name) || {};
+        packages.push({
+            name: name, type: 'formula', typeLabel: 'Formula', status: 'new',
+            desc: info.desc || 'No description available.',
+            homepage: info.homepage || ''
+        });
+    });
+    arr(DATA.new_casks).forEach(function (token) {
+        var info = cMap.get(token) || {};
+        packages.push({
+            name: token, type: 'cask', typeLabel: 'Cask', status: 'new',
+            desc: info.desc || 'No description available.',
+            homepage: info.homepage || ''
+        });
+    });
+
+    var counts = {
+        update:  packages.filter(function (p) { return p.status === 'update'; }).length,
+        new:     packages.filter(function (p) { return p.status === 'new'; }).length,
+        formula: packages.filter(function (p) { return p.type === 'formula'; }).length,
+        cask:    packages.filter(function (p) { return p.type === 'cask'; }).length
+    };
+    counts.total = packages.length;
+
+    /* ---------- header / hero / footer ---------- */
+    var ts = DATA.timestamp || '';
+    byId('chip-time').textContent = ts || '—';
+    byId('foot-time').textContent = ts || '—';
+    document.title = '🍺 Brew Update Tracker — ' + counts.total + ' package' + (counts.total === 1 ? '' : 's');
+
+    var sub = byId('hero-sub');
+    if (counts.total === 0) {
+        sub.innerHTML = 'You’re all caught up — everything is <b>up to date</b>. 🎉';
+        byId('donut-card').style.display = 'none';
+        byId('controls').style.display = 'none';
+    } else {
+        var parts = [];
+        if (counts.update) parts.push('<b>' + counts.update + '</b> upgrade' + (counts.update === 1 ? '' : 's') + ' pending');
+        if (counts.new) parts.push('<b>' + counts.new + '</b> new package' + (counts.new === 1 ? '' : 's'));
+        sub.innerHTML = parts.join(' · ') + ' · synced ' + esc(ts);
+    }
+
+    /* ---------- animated metric counters ---------- */
+    function countUp(el, target) {
+        if (REDUCED || target === 0) { el.textContent = String(target); return; }
+        var t0 = null, dur = 900;
+        function step(t) {
+            if (t0 === null) t0 = t;
+            var k = Math.min((t - t0) / dur, 1);
+            var e = 1 - Math.pow(1 - k, 3);
+            el.textContent = String(Math.round(target * e));
+            if (k < 1) requestAnimationFrame(step);
         }
+        requestAnimationFrame(step);
+    }
+    countUp(byId('stat-update'), counts.update);
+    countUp(byId('stat-new'), counts.new);
+    countUp(byId('stat-formula'), counts.formula);
+    countUp(byId('stat-cask'), counts.cask);
 
-        // 1. Process Outdated Formulae
-        (rawData.outdated_formulae || []).forEach(name => {
-            const info = formulaeMap.get(name) || {};
-            const ver = outdatedFormulaeMap.get(name) || {};
-            packages.push({
-                name: name,
-                type: 'formula',
-                status: 'outdated',
-                desc: info.desc || 'No description available.',
-                homepage: info.homepage || '#',
-                installed_version: (ver.installed_versions || []).join(', '),
-                current_version: ver.current_version || 'latest',
-                changelog: getChangelogUrl(info.homepage)
-            });
+    byId('cnt-all').textContent = String(counts.total);
+    byId('cnt-outdated').textContent = String(counts.update);
+    byId('cnt-new').textContent = String(counts.new);
+    byId('cnt-formula').textContent = String(counts.formula);
+    byId('cnt-cask').textContent = String(counts.cask);
+
+    /* ---------- donut breakdown ---------- */
+    (function () {
+        var segs = [
+            { label: 'Upgrade · Formulae', n: arr(DATA.outdated_formulae).length, color: '#fbbf24' },
+            { label: 'Upgrade · Casks',    n: arr(DATA.outdated_casks).length,    color: '#fb7185' },
+            { label: 'New · Formulae',     n: arr(DATA.new_formulae).length,      color: '#22d3ee' },
+            { label: 'New · Casks',        n: arr(DATA.new_casks).length,         color: '#a78bfa' }
+        ].filter(function (s) { return s.n > 0; });
+
+        byId('donut-total').textContent = String(counts.total);
+        var NS = 'http://www.w3.org/2000/svg';
+        var g = byId('donut-segs');
+        var R = 52, CIRC = 2 * Math.PI * R, acc = 0;
+
+        segs.forEach(function (s) {
+            var len = s.n / Math.max(counts.total, 1) * CIRC;
+            var c = document.createElementNS(NS, 'circle');
+            c.setAttribute('cx', '60'); c.setAttribute('cy', '60'); c.setAttribute('r', String(R));
+            c.setAttribute('fill', 'none'); c.setAttribute('stroke', s.color); c.setAttribute('stroke-width', '15');
+            c.setAttribute('stroke-dasharray', len + ' ' + (CIRC - len));
+            c.setAttribute('stroke-dashoffset', String(-acc));
+            g.appendChild(c);
+            acc += len;
         });
 
-        // 2. Process Outdated Casks
-        (rawData.outdated_casks || []).forEach(token => {
-            const info = casksMap.get(token) || {};
-            const ver = outdatedCasksMap.get(token) || {};
-            packages.push({
-                name: token,
-                type: 'cask',
-                status: 'outdated',
-                desc: info.desc || 'No description available.',
-                homepage: info.homepage || '#',
-                installed_version: (ver.installed_versions || []).join(', '),
-                current_version: ver.current_version || 'latest',
-                changelog: getChangelogUrl(info.homepage)
-            });
+        var legend = byId('legend');
+        segs.forEach(function (s) {
+            var li = document.createElement('div');
+            li.className = 'legend-item';
+            li.innerHTML = '<span class="swatch" style="background:' + s.color + '"></span>' + esc(s.label) + ' <b>' + s.n + '</b>';
+            legend.appendChild(li);
         });
+    })();
 
-        // 3. Process New Formulae
-        (rawData.new_formulae || []).forEach(name => {
-            const info = formulaeMap.get(name) || {};
-            packages.push({
-                name: name,
-                type: 'formula',
-                status: 'new',
-                desc: info.desc || 'No description available.',
-                homepage: info.homepage || '#',
-                changelog: getChangelogUrl(info.homepage)
-            });
-        });
+    /* ---------- rendering ---------- */
+    var feed = byId('feed');
+    var search = byId('search');
+    var filter = 'all';
+    var query = '';
 
-        // 4. Process New Casks
-        (rawData.new_casks || []).forEach(token => {
-            const info = casksMap.get(token) || {};
-            packages.push({
-                name: token,
-                type: 'cask',
-                status: 'new',
-                desc: info.desc || 'No description available.',
-                homepage: info.homepage || '#',
-                changelog: getChangelogUrl(info.homepage)
-            });
-        });
-
-        let activeFilter = 'all';
-        let searchQuery = '';
-
-        const feedEl = document.getElementById('package-feed');
-        const searchInput = document.getElementById('search-input');
-        const tabBtns = document.querySelectorAll('.tab-btn');
-        const toast = document.getElementById('toast');
-
-        function escapeHtml(str) {
-            return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    function matches(p) {
+        if (filter === 'outdated' && p.status !== 'update') return false;
+        if (filter === 'new' && p.status !== 'new') return false;
+        if (filter === 'formula' && p.type !== 'formula') return false;
+        if (filter === 'cask' && p.type !== 'cask') return false;
+        if (query) {
+            var q = query.toLowerCase();
+            return p.name.toLowerCase().indexOf(q) > -1 || p.desc.toLowerCase().indexOf(q) > -1;
         }
+        return true;
+    }
+    function commandFor(p) { return (p.status === 'update' ? 'brew upgrade ' : 'brew install ') + p.name; }
 
-        function showToast(msg) {
-            toast.querySelector('.toast-msg').textContent = msg;
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 2500);
+    function cardHtml(p, i) {
+        var cl = p.homepage ? changelogUrl(p.homepage) : null;
+        var cmd = commandFor(p);
+        var grad = 'g' + (hashCode(p.name) % 6);
+        var initial = esc(p.name.charAt(0).toUpperCase());
+        var nameEl = p.homepage
+            ? '<a class="pkg-name" href="' + esc(p.homepage) + '" target="_blank" rel="noopener">' + esc(p.name) + '</a>'
+            : '<span class="pkg-name">' + esc(p.name) + '</span>';
+        var verBar = (p.status === 'update' && p.installed)
+            ? '<div class="ver"><span class="ver-old">' + esc(p.installed) + '</span><span class="ver-arrow">⟶</span><span class="ver-new">' + esc(p.current || 'latest') + '</span></div>'
+            : '';
+        var actions = '<button class="act act-copy" data-cmd="' + esc(cmd) + '" type="button">⚡ <code>' + esc(cmd) + '</code></button>'
+            + (cl ? '<a class="act act-changelog" href="' + esc(cl) + '" target="_blank" rel="noopener">📋 Changelog</a>' : '')
+            + (p.homepage ? '<a class="act act-home" href="' + esc(p.homepage) + '" target="_blank" rel="noopener">🏠 Homepage</a>' : '');
+        return '<article class="card" style="animation-delay:' + Math.min(i * 35, 420) + 'ms">'
+            + '<div class="card-main">'
+            + '<div class="avatar ' + grad + '" aria-hidden="true">' + initial + '</div>'
+            + '<div class="card-body">'
+            + '<div class="card-top">' + nameEl
+            + '<span class="badge b-' + p.type + '">' + p.typeLabel + '</span>'
+            + '<span class="badge ' + (p.status === 'new' ? 'b-new' : 'b-update') + '">' + (p.status === 'new' ? 'New' : 'Update') + '</span>'
+            + '</div>' + verBar
+            + '<p class="pkg-desc">' + esc(p.desc) + '</p>'
+            + '<div class="card-actions">' + actions + '</div>'
+            + '</div></div></article>';
+    }
+
+    function render() {
+        if (counts.total === 0) {
+            feed.innerHTML = '<div class="empty party"><span class="e-ico">✨</span>'
+                + '<h3>Everything is up to date!</h3>'
+                + '<p>No upgrades pending and nothing new to explore.<br>Synced ' + esc(ts) + '</p>'
+                + '</div>';
+            return;
         }
-
-        window.copyCommand = function(cmd) {
-            navigator.clipboard.writeText(cmd).then(() => {
-                showToast(\`Copied: "\${cmd}"\`);
-            }).catch(() => {
-                showToast(\`Failed to copy: \${cmd}\`);
-            });
-        };
-
-        function render() {
-            const filtered = packages.filter(pkg => {
-                if (activeFilter === 'outdated' && pkg.status !== 'outdated') return false;
-                if (activeFilter === 'new' && pkg.status !== 'new') return false;
-                if (activeFilter === 'formula' && pkg.type !== 'formula') return false;
-                if (activeFilter === 'cask' && pkg.type !== 'cask') return false;
-
-                if (searchQuery) {
-                    const q = searchQuery.toLowerCase();
-                    const matchName = pkg.name.toLowerCase().includes(q);
-                    const matchDesc = pkg.desc.toLowerCase().includes(q);
-                    return matchName || matchDesc;
-                }
-
-                return true;
-            });
-
-            if (filtered.length === 0) {
-                feedEl.innerHTML = \`
-                    <div class="empty-state">
-                        <span class="icon">🔍</span>
-                        <h3>No packages found</h3>
-                        <p>Try adjusting your search query or filter tabs.</p>
-                    </div>
-                \`;
-                return;
-            }
-
-            feedEl.innerHTML = filtered.map(pkg => {
-                const isOutdated = pkg.status === 'outdated';
-                const cmd = isOutdated ? \`brew upgrade \${pkg.name}\` : \`brew install \${pkg.name}\`;
-
-                const versionHtml = isOutdated && pkg.installed_version && pkg.current_version
-                    ? \`<div class="version-bar">
-                            <span class="ver-old">\${escapeHtml(pkg.installed_version)}</span>
-                            <span class="ver-arrow">→</span>
-                            <span class="ver-new">\${escapeHtml(pkg.current_version)}</span>
-                       </div>\`
-                    : '';
-
-                const changelogHtml = pkg.changelog
-                    ? \`<a class="action-btn btn-changelog" href="\${escapeHtml(pkg.changelog)}" target="_blank">📋 Changelog</a>\`
-                    : '';
-
-                const homepageHtml = pkg.homepage && pkg.homepage !== '#'
-                    ? \`<a class="action-btn" href="\${escapeHtml(pkg.homepage)}" target="_blank">🏠 Homepage</a>\`
-                    : '';
-
-                return \`
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title-group">
-                                <a class="card-title" href="\${escapeHtml(pkg.homepage)}" target="_blank">\${escapeHtml(pkg.name)}</a>
-                                <div class="badge-list">
-                                    <span class="badge badge-\${pkg.type}">\${pkg.type}</span>
-                                    <span class="badge badge-\${pkg.status}">\${pkg.status}</span>
-                                </div>
-                            </div>
-                        </div>
-                        \${versionHtml}
-                        <p class="card-desc">\${escapeHtml(pkg.desc)}</p>
-                        <div class="card-actions">
-                            <button class="action-btn btn-copy" onclick="copyCommand('\${escapeHtml(cmd)}')">
-                                ⚡ <code>\${escapeHtml(cmd)}</code>
-                            </button>
-                            \${changelogHtml}
-                            \${homepageHtml}
-                        </div>
-                    </div>
-                \`;
-            }).join('');
+        var list = packages.filter(matches);
+        if (list.length === 0) {
+            feed.innerHTML = '<div class="empty"><span class="e-ico">🔍</span><h3>No matches</h3><p>Try a different search or switch filter.</p></div>';
+            return;
         }
+        feed.innerHTML = list.map(cardHtml).join('');
+    }
 
-        searchInput.addEventListener('input', (e) => {
-            searchQuery = e.target.value.trim();
+    /* ---------- interactions ---------- */
+    search.addEventListener('input', function () {
+        query = search.value.trim();
+        render();
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.pill').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            filter = btn.getAttribute('data-filter');
             render();
         });
+    });
 
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                tabBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                activeFilter = btn.dataset.filter;
-                render();
-            });
+    feed.addEventListener('click', function (e) {
+        var btn = e.target.closest('.act-copy');
+        if (btn) copyText(btn.getAttribute('data-cmd'), 'Command copied ✓');
+    });
+
+    byId('copy-all').addEventListener('click', function () {
+        if (counts.total === 0) { toast('Nothing to copy — already up to date 🎉'); return; }
+        var seen = {}, cmds = [];
+        packages.forEach(function (p) {
+            var c = commandFor(p);
+            if (!seen[c]) { seen[c] = 1; cmds.push(c); }
         });
+        copyText(cmds.join('\n'), cmds.length + ' command' + (cmds.length === 1 ? '' : 's') + ' copied ✓');
+    });
 
-        render();
-    })();
-    </script>
+    window.addEventListener('keydown', function (e) {
+        var ae = document.activeElement;
+        if (e.key === '/' && ae !== search && !(ae && ae.tagName === 'INPUT')) {
+            e.preventDefault();
+            search.focus();
+        }
+        if (e.key === 'Escape' && ae === search) {
+            search.value = '';
+            query = '';
+            render();
+            search.blur();
+        }
+    });
+
+    /* ---------- clipboard + toast ---------- */
+    var toastTimer = null;
+    function toast(msg) {
+        byId('toast-msg').textContent = msg;
+        var t = byId('toast');
+        t.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+    }
+    function copyText(text, okMsg) {
+        function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+            document.body.removeChild(ta);
+            toast(ok ? (okMsg || 'Copied ✓') : 'Copy failed 😕');
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+                toast(okMsg || 'Copied ✓');
+            }, fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    render();
+})();
+</script>
 </body>
 </html>
-HTMLEOF
+BREW_HTML_TAIL
+    } > "$landing_file"
 
     if [[ -f "$landing_file" ]]; then
         open "$landing_file"
-        printf '%b✅ Landing page opened in browser: %s%b\n' "$GREEN" "$landing_file" "$RESET"
+        printf '%b✅ Dashboard opened in browser: %s%b\n' "$GREEN" "$landing_file" "$RESET"
     fi
 }
 
