@@ -367,9 +367,9 @@ generate_landing_page() {
         pointer-events: none;
         will-change: transform;
     }
-    .orb-a { width: 520px; height: 520px; top: -160px; left: -120px; background: radial-gradient(circle at 30% 30%, rgba(99,102,241,0.55), transparent 65%); animation: drift 26s ease-in-out infinite alternate; }
-    .orb-b { width: 460px; height: 460px; top: 30%; right: -160px; background: radial-gradient(circle at 60% 40%, rgba(34,211,238,0.38), transparent 65%); animation: drift 32s ease-in-out infinite alternate-reverse; }
-    .orb-c { width: 420px; height: 420px; bottom: -180px; left: 28%; background: radial-gradient(circle at 50% 50%, rgba(167,139,250,0.35), transparent 65%); animation: drift 38s ease-in-out infinite alternate; }
+    .orb-a { width: 520px; height: 520px; top: -160px; left: -120px; background: radial-gradient(circle at 30% 30%, rgba(99,102,241,0.55), transparent 65%); animation: drift 26s ease-in-out 1 alternate; }
+    .orb-b { width: 460px; height: 460px; top: 30%; right: -160px; background: radial-gradient(circle at 60% 40%, rgba(34,211,238,0.38), transparent 65%); animation: drift 32s ease-in-out 1 alternate-reverse; }
+    .orb-c { width: 420px; height: 420px; bottom: -180px; left: 28%; background: radial-gradient(circle at 50% 50%, rgba(167,139,250,0.35), transparent 65%); animation: drift 38s ease-in-out 1 alternate; }
     @keyframes drift {
         0%   { transform: translate(0, 0) scale(1); }
         50%  { transform: translate(40px, -30px) scale(1.08); }
@@ -779,7 +779,8 @@ generate_landing_page() {
 
     <section class="donut-card" id="donut-card">
         <div class="donut-wrap">
-            <svg width="108" height="108" viewBox="0 0 120 120" aria-hidden="true">
+            <svg width="108" height="108" viewBox="0 0 120 120" role="img" aria-labelledby="donut-title">
+                <title id="donut-title">Package breakdown by category</title>
                 <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="15"/>
                 <g id="donut-segs"></g>
             </svg>
