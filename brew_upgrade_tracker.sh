@@ -1147,7 +1147,18 @@ outdated_c_count=$(jq 'length' <<< "$(get_names_json "$TEMP_DIR/outdated_casks.t
 total_updates=$((outdated_f_count + outdated_c_count))
 
 if [[ $total_updates -gt 0 ]]; then
-    printf '\n%b🚀 Found %s package(s) that can be upgraded.%b\n' "$BRIGHT_GREEN" "$total_updates" "$RESET"
+    # Be explicit about formulae vs casks: a plain `brew upgrade` upgrades
+    # only formulae, so users with casks outdated need to know.
+    if [[ $outdated_c_count -gt 0 && $outdated_f_count -eq 0 ]]; then
+        printf '\n%b🚀 Found %s outdated cask(s). (Note: '\''brew upgrade'\'' alone does not touch casks — we will pass '\''--greedy'\''.)%b\n' \
+            "$BRIGHT_GREEN" "$outdated_c_count" "$RESET"
+    elif [[ $outdated_c_count -gt 0 ]]; then
+        printf '\n%b🚀 Found %s outdated formulae and %s outdated cask(s) that can be upgraded.%b\n' \
+            "$BRIGHT_GREEN" "$outdated_f_count" "$outdated_c_count" "$RESET"
+    else
+        printf '\n%b🚀 Found %s outdated formulae that can be upgraded.%b\n' \
+            "$BRIGHT_GREEN" "$outdated_f_count" "$RESET"
+    fi
 
     do_upgrade=false
     if [[ "$AUTO_UPGRADE" == true ]]; then
@@ -1163,8 +1174,16 @@ if [[ $total_updates -gt 0 ]]; then
     fi
 
     if [[ "$do_upgrade" == true ]]; then
-        printf '\n%b⬆️ Running '\''brew upgrade'\''...%b\n' "$CYAN" "$RESET"
-        brew upgrade -y
+        # If only casks are outdated, `brew upgrade` (no args) won't touch
+        # them. `--greedy` upgrades casks as well; it's a no-op when no
+        # casks need an upgrade, so it's safe to pass unconditionally in
+        # the cask-only case.
+        upgrade_flags=()
+        if [[ $outdated_c_count -gt 0 && $outdated_f_count -eq 0 ]]; then
+            upgrade_flags=(--greedy)
+        fi
+        printf '\n%b⬆️ Running '\''brew upgrade %s'\''...%b\n' "$CYAN" "${upgrade_flags[*]}" "$RESET"
+        brew upgrade -y "${upgrade_flags[@]}"
         printf '%b✅ Upgrade completed!%b\n' "$GREEN" "$RESET"
     else
         printf '\n%b✋ Upgrade skipped.%b\n' "$YELLOW" "$RESET"
