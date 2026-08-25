@@ -153,12 +153,14 @@ Examples:
   - 🟡 Yellow: Prompts and warnings
   - 🔴 Red: Error messages
 
-- The script generates a modern HTML dashboard at `/tmp/brew-update-landing.html` and opens it in your default browser.
+- The script generates a modern HTML dashboard at `/tmp/brew-update-landing.html` and opens it in your default browser. On headless / SSH sessions the file is still written but the auto-open step is skipped gracefully (and the path is printed).
 - When non-critical errors occur, the script will:
   - Continue execution rather than failing completely
   - Log detailed error information to a temporary log file
   - Display a warning message with the log file location
   - Clean up the log file if no errors occurred
+- **Exit code**: the script exits with `0` on success, and `1` when `brew update` itself failed (so it's safe to use in CI / cron). Non-critical warnings (e.g. a missing homepage for one package) do not change the exit code.
+- **`brew upgrade` semantics**: by default Homebrew's plain `brew upgrade` only touches formulae. When the script is run with `-y` and there are outdated casks but no outdated formulae, it automatically passes `--greedy` so casks are upgraded too. When both formulae and casks are outdated, formulae are upgraded; you can re-run the script (or use the dashboard's "Copy all commands") to upgrade casks separately.
 
 ## 🚫 Troubleshooting
 
