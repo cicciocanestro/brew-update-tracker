@@ -1107,15 +1107,18 @@ else
     printf '\n%b✅ No packages to upgrade!%b\n' "$GREEN" "$RESET"
 fi
 
-# Step 6: Log cleanup / summary
+# Step 6: Generate Landing Page
+generate_landing_page
+
+# Step 7: Log cleanup / summary
+# Runs AFTER the dashboard build on purpose: generate_landing_page can append
+# errors to $LOG_FILE (e.g. failed `brew info --json=v2` bulk fetches), so this
+# summary/cleanup must happen last or those errors would never be reported.
 if [[ -f "$LOG_FILE" ]] && ! grep -q "ERROR" "$LOG_FILE" 2>/dev/null; then
     rm -f "$LOG_FILE"
 elif [[ -f "$LOG_FILE" ]]; then
     printf '\n%bSome non-critical warnings or errors occurred. See log: %s%b\n' "$YELLOW" "$LOG_FILE" "$RESET"
 fi
-
-# Step 7: Generate Landing Page
-generate_landing_page
 
 printf '\n%b🍺 Brew Update Tracker completed!%b\n' "$BRIGHT_GREEN" "$RESET"
 exit 0
