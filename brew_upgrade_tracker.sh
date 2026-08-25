@@ -90,15 +90,21 @@ printf '\n%b🔄 Updating Homebrew...%b\n' "$CYAN" "$RESET"
 # stdout is not a TTY (see cmd/update-report.rb), so parsing stdout alone would
 # never find new packages.
 (
-    HOMEBREW_NO_COLOR=1 HOMEBREW_NO_EMOJI=1 brew update > "$TEMP_DIR/brew_update_output.txt" 2>&1 &
-    pid=$!
-    while kill -0 "$pid" 2>/dev/null; do
-        printf '.'
-        sleep 0.5
-    done
-    wait "$pid"
-) 2>/dev/null
-update_exit=$?
+    # Persist brew update's real exit code to a file instead of relying on
+    # the subshell's $? (which is `wait $pid`, and could be masked by
+    # intermediate commands). Source: brew update 2>&1 is captured to a
+    # file because since Homebrew 4.1+ the whole update report (==> New
+    # Formulae / Casks, ...) goes to stderr when stdout is not a TTY.
+    HOMEBREW_NO_COLOR=1 HOMEBREW_NO_EMOJI=1 brew update > "$TEMP_DIR/brew_update_output.txt" 2>&1
+    echo $? > "$TEMP_DIR/brew_update_exit"
+) 2>/dev/null &
+pid=$!
+while kill -0 "$pid" 2>/dev/null; do
+    printf '.'
+    sleep 0.5
+done
+wait "$pid"
+update_exit=$(< "$TEMP_DIR/brew_update_exit")
 printf '\n'
 [[ $update_exit -ne 0 ]] && log_error "brew update failed (exit code $update_exit); new packages may be incomplete"
 < "$TEMP_DIR/brew_update_output.txt" cat
