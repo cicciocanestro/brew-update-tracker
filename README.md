@@ -1,5 +1,7 @@
 # 🍺 Brew Upgrade Tracker
 
+[![CI](https://github.com/cicciocanestro/brew-update-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/cicciocanestro/brew-update-tracker/actions/workflows/ci.yml)
+
 A smart Homebrew helper script that enhances the update and upgrade process by providing detailed information about available package updates.
 
 ![image](https://github.com/user-attachments/assets/cf807b0e-0930-4031-8d67-5ada1815fb42)

@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: brew install -q shellcheck
+
+      - name: Syntax check (zsh)
+        run: zsh -n brew_upgrade_tracker.sh
+
+      - name: Lint (shellcheck)
+        run: shellcheck --shell=bash brew_upgrade_tracker.sh
