@@ -104,7 +104,15 @@ while kill -0 "$pid" 2>/dev/null; do
     sleep 0.5
 done
 wait "$pid"
-update_exit=$(< "$TEMP_DIR/brew_update_exit")
+# Fail-safe default: if the subshell died before writing the sentinel file
+# (killed by a signal, OOM, ...), treat 'brew update' as failed rather than
+# succeeded. An empty/unreadable value would otherwise silently evaluate as
+# 0 in the [[ ... -ne 0 ]] arithmetic context below.
+update_exit=1
+if [[ -f "$TEMP_DIR/brew_update_exit" ]]; then
+    sentinel=$(< "$TEMP_DIR/brew_update_exit")
+    [[ $sentinel =~ ^[0-9]+$ ]] && update_exit=$sentinel
+fi
 printf '\n'
 [[ $update_exit -ne 0 ]] && log_error "brew update failed (exit code $update_exit); new packages may be incomplete"
 < "$TEMP_DIR/brew_update_output.txt" cat
@@ -1157,10 +1165,10 @@ if [[ $total_updates -gt 0 ]]; then
     # Be explicit about formulae vs casks: a plain `brew upgrade` upgrades
     # only formulae, so users with casks outdated need to know.
     if [[ $outdated_c_count -gt 0 && $outdated_f_count -eq 0 ]]; then
-        printf '\n%b🚀 Found %s outdated cask(s). (Note: '\''brew upgrade'\'' alone does not touch casks — we will pass '\''--greedy'\''.)%b\n' \
+        printf '\n%b🚀 Found %s outdated cask(s). (Note: '\''brew upgrade'\'' alone does not touch casks — we will pass '\''--cask'\''.)%b\n' \
             "$BRIGHT_GREEN" "$outdated_c_count" "$RESET"
     elif [[ $outdated_c_count -gt 0 ]]; then
-        printf '\n%b🚀 Found %s outdated formulae and %s outdated cask(s) that can be upgraded.%b\n' \
+        printf '\n%b🚀 Found %s outdated formulae and %s outdated cask(s) that can be upgraded (casks via '\''--cask'\'', which a plain '\''brew upgrade'\'' ignores).%b\n' \
             "$BRIGHT_GREEN" "$outdated_f_count" "$outdated_c_count" "$RESET"
     else
         printf '\n%b🚀 Found %s outdated formulae that can be upgraded.%b\n' \
@@ -1180,17 +1188,23 @@ if [[ $total_updates -gt 0 ]]; then
         printf '%bNon-interactive session detected. Skipping '\''brew upgrade'\'' (use -y to force).%b\n' "$YELLOW" "$RESET"
     fi
 
+    run_upgrade() {
+        printf '\n%b⬆️ Running '\''brew upgrade %s'\''...%b\n' "$CYAN" "$*" "$RESET"
+        brew upgrade -y "$@"
+    }
+
     if [[ "$do_upgrade" == true ]]; then
-        # If only casks are outdated, `brew upgrade` (no args) won't touch
-        # them. `--greedy` upgrades casks as well; it's a no-op when no
-        # casks need an upgrade, so it's safe to pass unconditionally in
-        # the cask-only case.
-        upgrade_flags=()
-        if [[ $outdated_c_count -gt 0 && $outdated_f_count -eq 0 ]]; then
-            upgrade_flags=(--greedy)
+        # Plain `brew upgrade` only touches formulae; outdated casks need an
+        # explicit `--cask`. Run one command per announced target so exactly
+        # what was reported above gets upgraded. Deliberately NOT using
+        # --greedy: it would also upgrade auto-update casks that were never
+        # part of the outdated list shown to the user.
+        if [[ $outdated_f_count -gt 0 ]]; then
+            run_upgrade --formula
         fi
-        printf '\n%b⬆️ Running '\''brew upgrade %s'\''...%b\n' "$CYAN" "${upgrade_flags[*]}" "$RESET"
-        brew upgrade -y "${upgrade_flags[@]}"
+        if [[ $outdated_c_count -gt 0 ]]; then
+            run_upgrade --cask
+        fi
         printf '%b✅ Upgrade completed!%b\n' "$GREEN" "$RESET"
     else
         printf '\n%b✋ Upgrade skipped.%b\n' "$YELLOW" "$RESET"

@@ -6,10 +6,10 @@
 - **Dashboard path now matches the README** (`/tmp/brew-update-landing.html`) instead of `${TMPDIR}/brew-update-landing.html`. The previous behavior put the file in a per-user temp directory on macOS, which was misleading documentation and surprising to users.
 - **`open` is now resilient on headless / SSH sessions**: if it fails, the script no longer claims the browser was opened — it logs the error and just prints the file path.
 - **`brew info` + `jq` pipeline failures are now logged** instead of silently swallowed, and a heuristic detects when a bulk fetch returns 0 entries for N requested packages.
-- **`brew update` exit code is captured reliably** (via a file written by the subshell) instead of relying on the parent shell's `$?`, which could be confused by intermediate commands.
+- **`brew update` exit code is captured reliably** (via a file written by the subshell) instead of relying on the parent shell's `$?`, which could be confused by intermediate commands. A missing or malformed sentinel file is treated as a failure rather than silently as success.
 
 ### Changed
-- **Upgrade prompt makes formulae vs casks explicit.** The terminal message now reports `N outdated formulae and M outdated cask(s)` separately. With `-y`, if only casks are outdated, the script automatically passes `--greedy` so `brew upgrade` actually upgrades them (a plain `brew upgrade` only touches formulae).
+- **Formulae vs casks are explicit in the prompt, and both actually get upgraded.** The terminal message reports `N outdated formulae and M outdated cask(s)` separately, and the upgrade runs one command per announced target: `brew upgrade --formula` for formulae and `brew upgrade --cask` for casks (a plain `brew upgrade` only touches formulae), in interactive and `-y` runs alike. `--greedy` is deliberately avoided because it would also upgrade auto-update casks that were never part of the reported list.
 - **Non-zero exit code on `brew update` failure**, so the script is friendly to CI / cron / shell wrappers. Non-critical warnings (e.g. missing homepage) still exit 0.
 - **Aurora background animations now stop after one cycle** (the longest is ~38s) instead of running forever, which is friendlier to battery and reduced-motion users. The dashboard's `prefers-reduced-motion` rule is unchanged.
 - **Donut chart accessibility**: added an SVG `<title>` and `role="img"` so screen readers announce it as a chart with a description.

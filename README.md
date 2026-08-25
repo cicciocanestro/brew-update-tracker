@@ -160,7 +160,7 @@ Examples:
   - Display a warning message with the log file location
   - Clean up the log file if no errors occurred
 - **Exit code**: the script exits with `0` on success, and `1` when `brew update` itself failed (so it's safe to use in CI / cron). Non-critical warnings (e.g. a missing homepage for one package) do not change the exit code.
-- **`brew upgrade` semantics**: by default Homebrew's plain `brew upgrade` only touches formulae. When the script is run with `-y` and there are outdated casks but no outdated formulae, it automatically passes `--greedy` so casks are upgraded too. When both formulae and casks are outdated, formulae are upgraded; you can re-run the script (or use the dashboard's "Copy all commands") to upgrade casks separately.
+- **`brew upgrade` semantics**: Homebrew's plain `brew upgrade` only touches formulae, while outdated casks need an explicit `--cask`. The script upgrades exactly what it announces: when formulae are outdated it runs `brew upgrade --formula`, and when casks are outdated it also runs `brew upgrade --cask`. It deliberately avoids `--greedy`, which would additionally upgrade auto-update casks that were never part of the reported list.
 
 ## 🚫 Troubleshooting
 
