@@ -157,6 +157,24 @@ jq -r '.formulae[].name' "$TEMP_DIR/outdated.json" > "$TEMP_DIR/outdated_formula
 jq -r '.casks[].name' "$TEMP_DIR/outdated.json" > "$TEMP_DIR/outdated_casks.txt" 2>/dev/null
 
 # Helper for Bulk Processing in CLI
+# Runs `xargs brew info --json=v2 | jq` and reports pipeline failures instead
+# of silently swallowing them. Returns the jq output via stdout.
+run_bulk_info() {
+    local input_file="$1"
+    local jq_query="$2"
+    local out xargs_rc jq_rc
+
+    # Two-stage pipe so we can inspect both exit codes (set -o pipefail
+    # would be cleaner but we keep `set +e` globally for resilience).
+    out=$(< "$input_file" xargs brew info --json=v2 2>>"$LOG_FILE")
+    xargs_rc=$?
+    [[ $xargs_rc -ne 0 ]] && log_error "brew info bulk fetch exited with code $xargs_rc"
+
+    printf '%s' "$out" | jq -r "$jq_query" 2>>"$LOG_FILE"
+    jq_rc=$?
+    [[ $jq_rc -ne 0 ]] && log_error "jq bulk processing exited with code $jq_rc"
+}
+
 process_packages() {
     local file="$1"
     local title="$2"
@@ -169,7 +187,20 @@ process_packages() {
         return
     fi
 
-    < "$file" xargs brew info --json=v2 2>>"$LOG_FILE" | jq -r "$jq_query" 2>/dev/null
+    local requested
+    requested=$(wc -l < "$file" | tr -d '[:space:]')
+    local output
+    output=$(run_bulk_info "$file" "$jq_query")
+
+    # Heuristic mismatch detection: if we asked for N packages and got 0
+    # lines of output (excluding pure whitespace), something likely failed.
+    local got
+    got=$(printf '%s\n' "$output" | grep -c 'Homepage: ' || true)
+    if [[ "$requested" -gt 0 && "$got" -eq 0 ]]; then
+        log_error "Bulk metadata returned 0 entries for $requested package(s) in '$title' — see log"
+    fi
+
+    printf '%s\n' "$output"
 }
 
 JQ_FORMULAE_QUERY='.formulae[] | "  - \(.name):\n      Homepage: \(.homepage // "Unable to retrieve homepage")\n      Description: \(.desc // "Unable to retrieve description")"'
@@ -211,11 +242,19 @@ generate_landing_page() {
     local casks_json="[]"
 
     if [[ -s "$f_list" ]]; then
-        formulae_json=$(< "$f_list" xargs brew info --json=v2 2>>"$LOG_FILE" | jq -s '[.[].formulae[]?]' 2>/dev/null)
+        local f_raw f_rc
+        f_raw=$(< "$f_list" xargs brew info --json=v2 2>>"$LOG_FILE")
+        f_rc=$?
+        [[ $f_rc -ne 0 ]] && log_error "Dashboard: bulk formulae fetch exited with code $f_rc"
+        formulae_json=$(printf '%s' "$f_raw" | jq -s '[.[].formulae[]?]' 2>>"$LOG_FILE")
         [[ -z "$formulae_json" ]] && formulae_json="[]"
     fi
     if [[ -s "$c_list" ]]; then
-        casks_json=$(< "$c_list" xargs brew info --json=v2 2>>"$LOG_FILE" | jq -s '[.[].casks[]?]' 2>/dev/null)
+        local c_raw c_rc
+        c_raw=$(< "$c_list" xargs brew info --json=v2 2>>"$LOG_FILE")
+        c_rc=$?
+        [[ $c_rc -ne 0 ]] && log_error "Dashboard: bulk casks fetch exited with code $c_rc"
+        casks_json=$(printf '%s' "$c_raw" | jq -s '[.[].casks[]?]' 2>>"$LOG_FILE")
         [[ -z "$casks_json" ]] && casks_json="[]"
     fi
 
