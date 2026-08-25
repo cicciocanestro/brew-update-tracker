@@ -1216,4 +1216,12 @@ elif [[ -f "$LOG_FILE" ]]; then
 fi
 
 printf '\n%b🍺 Brew Update Tracker completed!%b\n' "$BRIGHT_GREEN" "$RESET"
+
+# Non-zero exit when something significant went wrong, so the script is
+# friendly to CI / cron / shell wrappers. brew update failures and
+# bulk-fetch errors are the main signals; non-critical warnings (e.g.
+# missing homepage) keep exit 0 because the report is still useful.
+if [[ $update_exit -ne 0 ]]; then
+    exit 1
+fi
 exit 0
