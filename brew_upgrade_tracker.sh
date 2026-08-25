@@ -193,7 +193,7 @@ get_names_json() {
 
 # Step 4: Generate Interactive Dashboard HTML
 generate_landing_page() {
-    local landing_file="${TMP_BASE}/brew-update-landing.html"
+    local landing_file="/tmp/brew-update-landing.html"
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
