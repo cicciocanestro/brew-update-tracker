@@ -8,20 +8,10 @@ A smart Homebrew helper script that enhances the update and upgrade process by p
 
 This repository contains a ZSH script that wraps around Homebrew's update and upgrade functionality, providing additional insights and control. It tracks installed packages before and after running `brew update`, shows detailed information about available updates (including package homepages and descriptions), and lets you decide whether to proceed with the upgrade process.
 
-The script ships in **two versions** — pick the one that fits your workflow (see below).
+Since v3.0.0 the two former scripts (the CLI-only `brew_upgrade_tracker.sh` and `brew_upgrade_tracker_v2.sh`) are merged into a **single script**:
 
-## 📂 Two Versions
-
-| | **`brew_upgrade_tracker.sh`** (v1) | **`brew_upgrade_tracker_v2.sh`** (v2) |
-|---|---|---|
-| **Output** | Terminal CLI only | Terminal CLI **+** interactive HTML dashboard |
-| **Package metadata** | Standard `brew info` lookups | Fast bulk fetch via `brew info --json=v2` + `jq` |
-| **Command-line flags** | None | `-y`/`--yes`, `-h`/`--help` |
-| **Visual feedback** | Progress dots | Progress spinner + animated glassmorphism dashboard |
-| **Best for** | Minimal/headless use, plain terminal output, no browser | Daily driver: full dashboard with search, filters, one-click copy |
-| **Requires** | Homebrew + `jq` | Homebrew + `jq` + a default web browser |
-
-> **Recommendation:** use **v2** for the full experience. Use **v1** if you prefer a lightweight script that prints results only in the terminal and never opens a browser.
+- **Default mode**: terminal report + interactive HTML dashboard opened in your browser.
+- **`--no-dashboard`** (`-n`): terminal-only mode — the behavior of the old CLI-only script; never generates HTML and never opens a browser.
 
 ## 🔧 Prerequisites
 
@@ -39,12 +29,12 @@ The script ships in **two versions** — pick the one that fits your workflow (s
 
 2. Make the script executable:
    ```bash
-   chmod +x brew_upgrade_tracker_v2.sh
+   chmod +x brew_upgrade_tracker.sh
    ```
 
 3. Optionally, move the script to a directory in your PATH for easier access:
    ```bash
-   mv brew_upgrade_tracker_v2.sh /usr/local/bin/brew_upgrade_tracker
+   mv brew_upgrade_tracker.sh /usr/local/bin/brew_upgrade_tracker
    ```
 
 ## 🚀 Usage
@@ -52,22 +42,31 @@ The script ships in **two versions** — pick the one that fits your workflow (s
 Simply run the script from your terminal:
 
 ```bash
-./brew_upgrade_tracker_v2.sh
+./brew_upgrade_tracker.sh
 ```
 
 ### Options & Flags
 
 - `-y`, `--yes`: Automatically perform `brew upgrade` without prompting for confirmation.
+- `-n`, `--no-dashboard`: Terminal-only mode — skip HTML dashboard generation (never opens a browser).
 - `-h`, `--help`: Display usage instructions and exit.
+
+Unknown flags abort with an error and the usage help instead of being silently ignored.
 
 Examples:
 
 ```bash
-# Run interactively (opens HTML dashboard & prompts before upgrading)
-./brew_upgrade_tracker_v2.sh
+# Run interactively (prints report, opens HTML dashboard & prompts before upgrading)
+./brew_upgrade_tracker.sh
 
 # Run non-interactively with auto-upgrade
-./brew_upgrade_tracker_v2.sh -y
+./brew_upgrade_tracker.sh -y
+
+# Terminal-only mode: same report, no dashboard, no browser
+./brew_upgrade_tracker.sh --no-dashboard
+
+# Auto-upgrade without dashboard (e.g. for cron jobs / automation)
+./brew_upgrade_tracker.sh -y -n
 ```
 
 ## ✨ Features
@@ -112,7 +111,7 @@ If you encounter any issues:
 
 1. Ensure Homebrew is correctly installed and functioning.
 2. Verify that jq is installed (`brew install jq`).
-3. Check that the script has execute permissions (`chmod +x brew_upgrade_tracker_v2.sh`).
+3. Check that the script has execute permissions (`chmod +x brew_upgrade_tracker.sh`).
 4. Review the log file if any warnings appear during execution.
 5. For package-specific issues, try running `brew doctor`.
 

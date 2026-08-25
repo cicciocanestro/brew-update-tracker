@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [3.0.0] - 2026-08-25
+
+### Changed
+- **Single script:** the CLI-only `brew_upgrade_tracker.sh` and `brew_upgrade_tracker_v2.sh` are merged into one entry point (`brew_upgrade_tracker.sh`); the separate v2 script has been removed.
+  - New `-n` / `--no-dashboard` flag enables the old v1 terminal-only behavior (no dashboard generation, no browser).
+- Unknown command-line flags now abort with an error and the usage help instead of being silently ignored.
+- The final log summary/cleanup now runs after the dashboard build, so errors occurring while generating it are reported too.
+
+### Removed
+- `brew_upgrade_tracker_v2.sh` (superseded by the unified script).
+
 ## [2.1.0] - 2026-08-10
 
 ### Fixed
