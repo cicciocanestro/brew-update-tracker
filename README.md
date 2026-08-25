@@ -4,7 +4,60 @@
 
 A smart Homebrew helper script that enhances the update and upgrade process by providing detailed information about available package updates.
 
-![image](https://github.com/user-attachments/assets/cf807b0e-0930-4031-8d67-5ada1815fb42)
+## 📸 Screenshots
+
+**Interactive dashboard** (default mode — automatically opened in your browser):
+
+![Dashboard — Aurora Glass theme](docs/dashboard.png)
+
+**Terminal report** (`--no-dashboard`):
+
+```console
+$ ./brew_upgrade_tracker.sh --no-dashboard
+🍺 Brew Update Tracker
+=======================
+
+🔄 Updating Homebrew...
+.
+Updated 4 taps (2026-08-25).
+==> New Formulae
+lazygit: simple terminal UI for git commands
+tailspin: log file highlighter
+==> New Casks
+orbstack (1.7.4)
+raycast (1.80.0)
+
+🔍 Finding outdated packages...
+
+📊 📦 Updated Formulae:
+  - git:
+      Homepage: https://git-scm.com
+      Description: Distributed revision control system
+  - node:
+      Homepage: https://nodejs.org/
+      Description: Platform built on V8 to build network applications
+  …
+
+📊 📦 Updated Casks:
+  - iterm2:
+      Homepage: https://iterm2.com
+      Description: Terminal emulator as alternative to Apple Terminal
+  - visual-studio-code:
+      Homepage: https://code.visualstudio.com/
+      Description: Microsoft Visual Studio Code IDE
+
+🆕 New Formulae / New Casks:
+  - lazygit, tailspin, orbstack, raycast
+      (homepage & description shown for each)
+
+🚀 Found 6 package(s) that can be upgraded.
+Do you want to perform 'brew upgrade' now? (y/n): n
+✋ Upgrade skipped.
+
+📝 Dashboard skipped (--no-dashboard).
+
+🍺 Brew Update Tracker completed!
+```
 
 ## 📋 Description
 
