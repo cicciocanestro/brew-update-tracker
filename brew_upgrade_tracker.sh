@@ -78,7 +78,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 TEMP_DIR=$(mktemp -d "${TMP_BASE}/brew-update-tracker.XXXXXX")
-trap "rm -rf '$TEMP_DIR'" EXIT
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 printf '%b🍺 Brew Update Tracker%b\n' "$BRIGHT_GREEN" "$RESET"
 printf '%b=======================%b\n' "$BRIGHT_GREEN" "$RESET"
@@ -226,10 +226,11 @@ generate_landing_page() {
         outdated_json_data='{"formulae":[],"casks":[]}'
     fi
 
-    local new_f_names=$(get_names_json "$TEMP_DIR/new_formulae.txt")
-    local new_c_names=$(get_names_json "$TEMP_DIR/new_casks.txt")
-    local out_f_names=$(get_names_json "$TEMP_DIR/outdated_formulae.txt")
-    local out_c_names=$(get_names_json "$TEMP_DIR/outdated_casks.txt")
+    local new_f_names new_c_names out_f_names out_c_names
+    new_f_names=$(get_names_json "$TEMP_DIR/new_formulae.txt")
+    new_c_names=$(get_names_json "$TEMP_DIR/new_casks.txt")
+    out_f_names=$(get_names_json "$TEMP_DIR/outdated_formulae.txt")
+    out_c_names=$(get_names_json "$TEMP_DIR/outdated_casks.txt")
 
     # Assemble the unified JSON payload (same schema as before)
     local json_data=""
