@@ -1087,8 +1087,18 @@ BREW_HTML_TAIL
     } > "$landing_file"
 
     if [[ -f "$landing_file" ]]; then
-        open "$landing_file"
-        printf '%b✅ Dashboard opened in browser: %s%b\n' "$GREEN" "$landing_file" "$RESET"
+        if command -v open >/dev/null 2>&1; then
+            if open "$landing_file" 2>>"$LOG_FILE"; then
+                printf '%b✅ Dashboard opened in browser: %s%b\n' "$GREEN" "$landing_file" "$RESET"
+            else
+                # Common case: SSH / headless session (no WindowServer).
+                # Don't claim success — just point the user at the file.
+                log_error "Could not auto-open the dashboard (no GUI session?). File is at: $landing_file"
+                printf '%b📄 Dashboard generated (browser auto-open unavailable): %s%b\n' "$CYAN" "$landing_file" "$RESET"
+            fi
+        else
+            printf '%b📄 Dashboard generated (no %sopen%s command on this system): %s%b\n' "$CYAN" "open" "$RESET" "$landing_file" "$RESET"
+        fi
     fi
 }
 
